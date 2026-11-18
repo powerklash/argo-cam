@@ -109,13 +109,14 @@ This saves `eufy-cloud.json` (P2P servers and a temporary wake key that lasts ab
 | `GO2RTC_BIN` | path to go2rtc |
 | `INTERNAL_PORT` | loopback port for the Eufy stream (default `PORT+1`) |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | first-start admin |
+| `CAMAPP_SECRET_KEY` | key that encrypts camera credentials and tokens at rest (generated in `/etc/cam-app.env` by the installer; back it up). `CAMAPP_KEY_FILE` points to a key file instead; `CAMAPP_SECRETS=off` keeps files in clear text |
 
 Microphone (doorbell talk-back) and browser notifications require HTTPS.
 
 ## Known limits
 
-- Device error messages are in Italian; the UI itself is translated.
-- Camera credentials are stored in clear text (file mode 600): keep cameras and server on a dedicated network.
+- Error messages reported by the cameras themselves (the text after the colon, e.g. a refused-login reason) are shown as the device sends them; Argo's own messages are translated (it, en, fr, de, es — see `lib/errors-i18n.js`, check with `node tools/check-errors.mjs`).
+- Credentials are encrypted at rest, but they live in clear text in memory and in process command lines: keep cameras and server on a dedicated network (see [SECURITY.md](SECURITY.md)).
 - Eufy H.265 cameras (S340) need a browser that decodes H.265.
 - Fire/flood detection is heuristic; recognition accuracy depends on camera quality and thresholds (adjustable in Settings).
 

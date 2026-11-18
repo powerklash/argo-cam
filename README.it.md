@@ -109,13 +109,14 @@ Salva `eufy-cloud.json` (server P2P e una chiave di sveglia temporanea di circa 
 | `GO2RTC_BIN` | percorso di go2rtc |
 | `INTERNAL_PORT` | porta solo-loopback del flusso Eufy (predefinita `PORT+1`) |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD` | amministratore del primo avvio |
+| `CAMAPP_SECRET_KEY` | chiave che cifra a riposo le credenziali delle telecamere e i token (la genera l'installazione in `/etc/cam-app.env`; fanne una copia). `CAMAPP_KEY_FILE` indica invece un file di chiave; `CAMAPP_SECRETS=off` lascia i file in chiaro |
 
 Microfono (parlare al campanello) e notifiche del browser richiedono HTTPS.
 
 ## Limiti noti
 
-- I messaggi d'errore dei dispositivi sono in italiano; l'interfaccia è tradotta.
-- Le credenziali delle telecamere stanno in chiaro (permessi 600): tieni telecamere e server in una rete dedicata.
+- I messaggi d'errore che arrivano dalle telecamere stesse (il testo dopo i due punti, ad esempio il motivo di un accesso rifiutato) si vedono come li manda il dispositivo; quelli di Argo sono tradotti (it, en, fr, de, es — vedi `lib/errors-i18n.js`, controllo con `node tools/check-errors.mjs`).
+- Le credenziali sono cifrate a riposo, ma restano in chiaro in memoria e nelle righe di comando dei processi: tieni telecamere e server in una rete dedicata (vedi [SECURITY.md](SECURITY.md)).
 - Il video Eufy in H.265 (S340) richiede un browser che decodifichi H.265.
 - Incendio/allagamento sono controlli euristici; la precisione del riconoscimento dipende dalla qualità delle telecamere e dalle soglie (regolabili nelle Impostazioni).
 

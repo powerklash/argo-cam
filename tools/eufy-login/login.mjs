@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as secrets from '../../lib/secrets.js'; // i file con segreti si salvano cifrati
 
 // cipherID letti in locale dalle telecamere: seriale -> numero. Si passano con la variabile d'ambiente
 // EUFY_CIPHERS, per esempio:  EUFY_CIPHERS="T84A1XXXXXXXXXXX=138,T8170XXXXXXXXXXX=90"
@@ -142,7 +143,7 @@ for (const st of stations) {
 }
 const CLOUD_OUT = path.join(path.dirname(OUT), 'eufy-cloud.json');
 fs.mkdirSync(path.dirname(CLOUD_OUT), { recursive: true });
-fs.writeFileSync(CLOUD_OUT, JSON.stringify(cloud, null, 2), { mode: 0o600 });
+secrets.writeSecretFile(CLOUD_OUT, cloud, { pretty: true });
 console.log('\nDati per la sveglia delle batterie salvati in:', CLOUD_OUT);
 for (const [sn, c] of Object.entries(cloud.stations)) {
   const left = c.dskExpires ? Math.round((c.dskExpires - Date.now()) / 3600000) : null;
@@ -154,7 +155,7 @@ for (const [sn, c] of Object.entries(cloud.stations)) {
 if (!process.argv.includes('--no-session')) {
   const SESSION_OUT = path.join(path.dirname(OUT), 'eufy-session.json');
   const exp = api.getTokenExpiration ? api.getTokenExpiration() : null;
-  fs.writeFileSync(SESSION_OUT, JSON.stringify({ country, token: api.token || null, tokenExpiration: exp ? exp.getTime() : null, persistentData: persistent() }, null, 2), { mode: 0o600 });
+  secrets.writeSecretFile(SESSION_OUT, { country, token: api.token || null, tokenExpiration: exp ? exp.getTime() : null, persistentData: persistent() }, { pretty: true });
   console.log(`Sessione di rinnovo salvata in: ${SESSION_OUT}${exp ? ` (valida fino al ${exp.toLocaleDateString()})` : ''}`);
 }
 if (process.argv.includes('--wake-only')) { // non tocca eufy-account.json (che ha già le chiavi dei cifrari)
@@ -179,7 +180,7 @@ for (const st of stations) {
 }
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
-fs.writeFileSync(OUT, JSON.stringify(result, null, 2));
+secrets.writeSecretFile(OUT, result, { pretty: true });
 
 console.log('\nFatto. Salvato in:', OUT);
 console.log('Riepilogo (senza segreti):');

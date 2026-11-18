@@ -200,6 +200,13 @@ if [ ! -f "$ENV_FILE" ]; then
   chmod 640 "$ENV_FILE"; chown root:"$SVC_USER" "$ENV_FILE"
 fi
 
+# Chiave con cui l'app cifra i segreti a riposo (credenziali delle telecamere, token): sta qui, fuori dalla cartella dei
+# dati, così una copia dei dati da sola non basta per leggerli. Non perderla: senza, le telecamere vanno reinserite.
+if ! grep -q '^CAMAPP_SECRET_KEY=' "$ENV_FILE"; then
+  log "Genero la chiave per cifrare i segreti in $ENV_FILE"
+  echo "CAMAPP_SECRET_KEY=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> "$ENV_FILE"
+fi
+
 # Con HTTPS: certificato da scaricare = autorità locale; la porta 80 reindirizza a https (chi scrive solo l'indirizzo).
 if [ -f "$CONF_DIR/tls.crt" ]; then
   grep -q '^CERT_DOWNLOAD=' "$ENV_FILE" || echo "CERT_DOWNLOAD=$CONF_DIR/ca.crt" >> "$ENV_FILE"
@@ -241,6 +248,9 @@ User=$SVC_USER
 Group=$SVC_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
+# Cartella di lavoro in memoria (/run/cam-app): ci va la configurazione di go2rtc, con le credenziali, solo per l'avvio.
+RuntimeDirectory=cam-app
+RuntimeDirectoryMode=0700
 $PRE_LINES
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 ExecStart=/usr/local/bin/node --disable-warning=ExperimentalWarning server.js

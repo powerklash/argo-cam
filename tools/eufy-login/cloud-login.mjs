@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import * as secrets from '../../lib/secrets.js'; // i file con segreti si salvano cifrati
 
 const DATA = path.resolve(process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data'));
 const emit = (o) => process.stdout.write(`@@EV ${JSON.stringify(o)}\n`);
@@ -38,8 +39,8 @@ const decodeCloudIps = (data) => { // stesso schema di eufy-security-client (dec
   }
   return out.toString('utf8').split(',').filter(Boolean);
 };
-const readJson = (file) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } };
-const writeJson = (file, obj) => fs.writeFileSync(file, JSON.stringify(obj, null, 2), { mode: 0o600 });
+const readJson = (file) => { try { return secrets.readSecretFile(file)?.data ?? null; } catch { return undefined; } }; // undefined = chiave dei segreti non valida
+const writeJson = (file, obj) => secrets.writeSecretFile(file, obj, { pretty: true });
 
 const first = await next();
 if (first?.cmd !== 'login') await finish({ event: 'error', code: 'protocol' }, 1);
@@ -100,7 +101,9 @@ for (const st of stations) {
 
 // eufy-account.json: si aggiorna senza perdere cipherID e chiavi già lette (login.mjs con EUFY_CIPHERS)
 fs.mkdirSync(DATA, { recursive: true });
-const account = readJson(path.join(DATA, 'eufy-account.json')) || { cameras: {} };
+const existing = readJson(path.join(DATA, 'eufy-account.json'));
+if (existing === undefined) await finish({ event: 'error', code: 'secrets' }, 1); // file cifrato con un'altra chiave: non si sovrascrive
+const account = existing || { cameras: {} };
 account.accountId = accountId;
 account.cameras = account.cameras || {};
 for (const st of stations) {

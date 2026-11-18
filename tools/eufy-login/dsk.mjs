@@ -6,6 +6,7 @@ import { HTTPApi } from 'eufy-security-client';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as secrets from '../../lib/secrets.js'; // i file con segreti si salvano cifrati
 
 const DATA = path.resolve(process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data'));
 const SESSION = path.join(DATA, 'eufy-session.json');
@@ -13,8 +14,10 @@ const CLOUD = path.join(DATA, 'eufy-cloud.json');
 const fail = (code, msg) => { console.log(msg); process.exit(code); };
 
 let session, cloud;
-try { session = JSON.parse(fs.readFileSync(SESSION, 'utf8')); } catch { fail(2, 'Sessione Eufy mancante: esegui login.mjs'); }
-try { cloud = JSON.parse(fs.readFileSync(CLOUD, 'utf8')); } catch { fail(2, 'eufy-cloud.json mancante: esegui login.mjs'); }
+try { session = secrets.readSecretFile(SESSION)?.data; } catch (e) { fail(1, e.message); }
+if (!session) fail(2, 'Sessione Eufy mancante: esegui login.mjs');
+try { cloud = secrets.readSecretFile(CLOUD)?.data; } catch (e) { fail(1, e.message); }
+if (!cloud) fail(2, 'eufy-cloud.json mancante: esegui login.mjs');
 if (!session.token) fail(2, 'Sessione Eufy senza token: esegui login.mjs');
 if (session.tokenExpiration && Date.now() >= session.tokenExpiration) fail(2, 'Sessione Eufy scaduta: esegui login.mjs');
 
@@ -44,6 +47,6 @@ for (const sn of serials) {
 }
 if (!ok) fail(2, 'Nessuna chiave rinnovata: la sessione non è più valida? esegui login.mjs');
 cloud.fetchedAt = Date.now();
-fs.writeFileSync(CLOUD, JSON.stringify(cloud, null, 2), { mode: 0o600 });
+secrets.writeSecretFile(CLOUD, cloud, { pretty: true });
 console.log(`Rinnovate ${ok} chiavi di sveglia`);
 process.exit(0);

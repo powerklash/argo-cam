@@ -1,5 +1,5 @@
 // Stato condiviso e utilità comuni a tutti i moduli dell'interfaccia.
-import { t, has } from './i18n.js';
+import { t, has, getLang } from './i18n.js';
 
 export const state = {
   me: null, // utente collegato: { id, username, displayName, role, mustChange }
@@ -34,7 +34,8 @@ export function errorText(err) {
 export async function api(method, url, body) {
   const res = await fetch(url, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    // X-Lang: il server traduce i messaggi d'errore nella lingua scelta nell'interfaccia.
+    headers: { 'X-Lang': getLang(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));

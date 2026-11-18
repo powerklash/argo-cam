@@ -29,13 +29,20 @@ import * as netinfo from './lib/netinfo.js';
 import * as archive from './lib/archive.js';
 import * as battery from './lib/battery.js';
 import * as hazard from './lib/hazard.js';
+import * as secrets from './lib/secrets.js';
 import os from 'node:os';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { localize, langOf } from './lib/errors-i18n.js';
 import { BRANDS, buildSources, normalizeParams, publicBrands, publicCamera } from './lib/brands.js';
 import { ROOT, DATA, GO2RTC_BIN, IS_WINDOWS } from './lib/paths.js';
 
 const PUBLIC = path.join(ROOT, 'public');
 const CAMERAS_FILE = path.join(DATA, 'cameras.json');
-const GO2RTC_CFG = path.join(DATA, 'go2rtc.yaml');
+// La configurazione di go2rtc contiene le credenziali delle telecamere in chiaro: sta in una cartella privata di lavoro
+// (RuntimeDirectory di systemd, in memoria) e si cancella appena go2rtc l'ha letta, quindi non resta mai nei dati.
+const CFG_DIR = (process.env.RUNTIME_DIRECTORY || '').split(':')[0] || fs.mkdtempSync(path.join(os.tmpdir(), 'argo-'));
+const GO2RTC_CFG = path.join(CFG_DIR, 'go2rtc.yaml');
+fs.rmSync(path.join(DATA, 'go2rtc.yaml'), { force: true }); // versioni precedenti la lasciavano nei dati, con le credenziali
 
 const PORT = Number(process.env.PORT) || 8780;
 // Solo questo PC per impostazione predefinita; sul server (CT) l'installazione imposta HOST=0.0.0.0.
@@ -50,13 +57,28 @@ fs.mkdirSync(DATA, { recursive: true });
 process.on('unhandledRejection', (err) => console.error('[errore non gestito]', err));
 
 // ---------- telecamere ----------
+// Le credenziali (params) stanno cifrate nel file (lib/secrets.js); in memoria sono in chiaro.
+const saveCameras = () => {
+  const tmp = `${CAMERAS_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(secrets.sealCameras(cameras), null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, CAMERAS_FILE);
+};
 let cameras = [];
 try {
-  cameras = JSON.parse(fs.readFileSync(CAMERAS_FILE, 'utf8'));
-} catch {
+  const opened = secrets.openCameras(JSON.parse(fs.readFileSync(CAMERAS_FILE, 'utf8')));
+  cameras = opened.cameras;
+  if (opened.plain && secrets.enabled()) { saveCameras(); console.log('[segreti] credenziali delle telecamere ora cifrate nel file'); }
+} catch (err) {
+  if (err instanceof secrets.SecretError) {
+    // Senza la chiave giusta non si parte: con l'elenco vuoto il primo salvataggio cancellerebbe le telecamere.
+    console.error(`[segreti] ${err.message}`);
+    process.exit(1);
+  }
+  if (err.code !== 'ENOENT') { // file illeggibile: lo si conserva a parte invece di sovrascriverlo
+    try { fs.renameSync(CAMERAS_FILE, `${CAMERAS_FILE}.bad-${Date.now()}`); console.error(`[telecamere] cameras.json non valido, conservato a parte: ${err.message}`); } catch { /* ignora */ }
+  }
   cameras = [];
 }
-const saveCameras = () => fs.writeFileSync(CAMERAS_FILE, JSON.stringify(cameras, null, 2), { mode: 0o600 });
 const byId = (id) => cameras.find((c) => c.id === id);
 
 /** Telecamera come la vede `user`: l'amministratore ha tutto, gli altri solo il necessario (niente indirizzi né credenziali). */
@@ -160,6 +182,7 @@ function startGo2rtc() {
   writeGo2rtcConfig();
   const child = spawn(GO2RTC_BIN, ['-c', GO2RTC_CFG], { cwd: DATA, windowsHide: true, detached: !IS_WINDOWS });
   go2rtc = child;
+  waitForGo2rtc().then((up) => { if (up) fs.rm(GO2RTC_CFG, { force: true }, () => {}); }); // già letta: non resta su disco
   const log = (d) => process.stdout.write(`[go2rtc] ${d}`);
   child.stdout.on('data', log);
   child.stderr.on('data', log);
@@ -178,10 +201,10 @@ function waitForGo2rtc() {
   return new Promise((resolve) => {
     const attempt = () => {
       const s = net.connect(GO2RTC_API.port, GO2RTC_API.host);
-      s.once('connect', () => (s.destroy(), resolve()));
+      s.once('connect', () => (s.destroy(), resolve(true)));
       s.once('error', () => {
         s.destroy();
-        if (Date.now() > deadline) resolve();
+        if (Date.now() > deadline) resolve(false);
         else setTimeout(attempt, 100);
       });
     };
@@ -240,7 +263,21 @@ class HttpError extends Error {
   }
 }
 
+// Lingua della richiesta in corso (X-Lang dell'interfaccia, altrimenti Accept-Language): i messaggi d'errore, scritti
+// in italiano nel codice, escono tradotti (lib/errors-i18n.js).
+const langStore = new AsyncLocalStorage();
+const tr = (message) => localize(message, langStore.getStore() || 'it');
+function localizeBody(body) {
+  const lang = langStore.getStore();
+  if (!lang || lang === 'it' || !body || typeof body !== 'object') return body;
+  if (typeof body.error === 'string') body = { ...body, error: localize(body.error, lang) };
+  const last = body.status?.last;
+  if (last?.error) body = { ...body, status: { ...body.status, last: { ...last, error: localize(last.error, lang) } } };
+  return body;
+}
+
 const json = (res, status, body, headers = {}) => {
+  body = localizeBody(body);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(JSON.stringify(body));
 };
@@ -1029,6 +1066,10 @@ const redirectToLogin = (res, url) => {
 
 // ---------- server ----------
 function onRequest(req, res) {
+  langStore.run(langOf(req), () => handleRequest(req, res));
+}
+
+function handleRequest(req, res) {
   securityHeaders(res, req);
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
@@ -1057,7 +1098,7 @@ function onRequest(req, res) {
     }
     if (PUBLIC_FILES.has(p)) return serveStatic(res, p);
     if (!user) return redirectToLogin(res, url);
-    if (ADMIN_FILES.has(p) && user.role !== 'admin') return res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Riservato agli amministratori');
+    if (ADMIN_FILES.has(p) && user.role !== 'admin') return res.writeHead(403, { 'Content-Type': 'text/plain' }).end(tr('Riservato agli amministratori'));
     return serveStatic(res, p);
   } catch (err) {
     console.error('[richiesta]', err);

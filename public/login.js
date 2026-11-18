@@ -29,7 +29,7 @@ form.addEventListener('submit', async (e) => {
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() },
       body: JSON.stringify({ username: form.elements.username.value, password: form.elements.password.value }),
     });
     const data = await res.json().catch(() => ({}));
@@ -70,7 +70,7 @@ const recMessage = (data, status) => (data.code === 'LOCKED'
   : t(`err.${data.code}`, null, data.error || `HTTP ${status}`));
 
 async function post(url, body) {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Lang': getLang() }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
