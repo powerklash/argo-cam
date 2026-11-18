@@ -91,7 +91,13 @@ cd tools/eufy-login && npm install
 EUFY_CIPHERS="<seriale>=<cipherId>,..." DATA_DIR=/var/lib/cam-app node login.mjs
 ```
 
-Le credenziali le digiti nel terminale e non vengono salvate. `node tools/eufy-discover.js` trova le telecamere e i cipherID in rete. Le SoloCam a batteria dormono: l'app invia pacchetti di ricerca finché rispondono e si collega subito; alcuni modelli (ad esempio la S340) non si svegliano senza l'app Eufy o il movimento.
+Le credenziali le digiti nel terminale e non vengono salvate. `node tools/eufy-discover.js` trova le telecamere e i cipherID in rete. Le SoloCam a batteria dormono: l'app invia pacchetti di ricerca finché rispondono e si collega subito; alcuni modelli (ad esempio la S340) non rispondono ai pacchetti locali finché dormono, quindi l'app può anche **svegliarli tramite i server P2P di Eufy, come fa l'app ufficiale** (dal cloud passa solo la richiesta di sveglia; il video resta locale). Per attivarlo, esegui ancora una volta:
+
+```bash
+cd tools/eufy-login && DATA_DIR=/var/lib/cam-app node login.mjs --wake-only
+```
+
+Salva `eufy-cloud.json` (server P2P e una chiave di sveglia temporanea di circa 30 minuti) ed `eufy-session.json` (il **token di accesso Eufy, non la password**, valido circa 30 giorni), entrambi con permessi ristretti. L'app rinnova da sola la chiave con il token; quando il token scade (lo dice il log) si rilancia il comando. Con `--no-session` il token non viene salvato (la sveglia funziona solo per 30 minuti dopo ogni accesso); cancellando `eufy-session.json` si toglie l'accesso.
 
 ## Variabili d'ambiente
 

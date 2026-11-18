@@ -8,7 +8,9 @@
 import { HTTPApi } from 'eufy-security-client';
 import readline from 'node:readline';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // cipherID letti in locale dalle telecamere: seriale -> numero. Si passano con la variabile d'ambiente
 // EUFY_CIPHERS, per esempio:  EUFY_CIPHERS="T84A1XXXXXXXXXXX=138,T8170XXXXXXXXXXX=90"
@@ -18,7 +20,7 @@ const CIPHERS = Object.fromEntries(
 );
 // Stessa cartella dati dell'app (DATA_DIR oppure ../../data rispetto a questo file).
 const OUT = path.join(
-  path.resolve(process.env.DATA_DIR || path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', '..', 'data')),
+  path.resolve(process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'data')),
   'eufy-account.json',
 );
 
@@ -85,7 +87,8 @@ for (let attempt = 0; attempt < 5 && !loggedIn; attempt++) {
   if (persistent().user_id) { loggedIn = true; break; }
   if (captchaItem) {
     const b64 = captchaItem.includes(',') ? captchaItem.split(',')[1] : captchaItem;
-    const file = path.join(process.cwd(), 'captcha.png');
+    // Nella cartella temporanea e con nome nuovo ogni volta: così non si scontra con un'immagine rimasta aperta.
+    const file = path.join(os.tmpdir(), `eufy-captcha-${Date.now()}.png`);
     fs.writeFileSync(file, Buffer.from(b64, 'base64'));
     console.log(`\nServe un captcha: apri l'immagine ${file} e leggi i caratteri.`);
     captcha = { captchaId, captchaCode: await ask('Captcha: ') };
@@ -106,6 +109,59 @@ const accountId = persistent().user_id;
 console.log('\nAccesso riuscito. accountId letto.');
 
 const stations = await api.getStationList();
+
+// ---- Sveglia assistita dal cloud (telecamere a batteria) ----
+// L'app Eufy sveglia le batterie facendo passare una richiesta dai server P2P Eufy. Per rifarlo l'app ha bisogno,
+// per ogni stazione, dell'elenco dei server P2P e di una chiave temporanea (dsk) con la sua scadenza.
+// Si salva in <DATA_DIR>/eufy-cloud.json: niente password né token di accesso.
+const decodeCloudIps = (data) => { // stesso schema di eufy-security-client (decodeP2PCloudIPs)
+  const table = Buffer.from('4959433db5bf6da347534f6165e371e9677f02030badb3892b2f35c16b8b959711e5a70deff1050783fb9d3bc5c713171d1f2529d3df', 'hex');
+  const encoded = data.split(':')[0];
+  const out = Buffer.alloc(encoded.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    let z = 0x39;
+    for (let j = 0; j < i; j++) z ^= out[j];
+    out[i] = z ^ table[i % table.length] ^ ((data.charCodeAt(i * 2 + 1) - 65) + (data.charCodeAt(i * 2) - 65) * 16);
+  }
+  return out.toString('utf8').split(',').filter(Boolean);
+};
+const cloud = { fetchedAt: Date.now(), stations: {} };
+for (const st of stations) {
+  const sn = st.station_sn;
+  const entry = { did: st.p2p_did, servers: [], dsk: null, dskExpires: null };
+  try { entry.servers = decodeCloudIps(String(st.app_conn || '')); } catch (e) { console.log(`server P2P ${sn}: ${e.message}`); }
+  try {
+    const r = await api.request({ method: 'post', endpoint: 'v1/app/equipment/get_dsk_keys', data: { invalid_dsks: { [sn]: '' }, station_sns: [sn], transaction: `${Date.now()}` } });
+    const k = r.data?.data?.dsk_keys?.find((x) => x.station_sn === sn);
+    if (k?.dsk_key) { entry.dsk = k.dsk_key; entry.dskExpires = Number(k.expiration) * 1000; }
+    else console.log(`chiave sveglia ${sn}: non ricevuta (codice ${r.data?.code} ${r.data?.msg || ''})`);
+  } catch (e) {
+    console.log(`chiave sveglia ${sn}: ${e.message}`);
+  }
+  cloud.stations[sn] = entry;
+}
+const CLOUD_OUT = path.join(path.dirname(OUT), 'eufy-cloud.json');
+fs.mkdirSync(path.dirname(CLOUD_OUT), { recursive: true });
+fs.writeFileSync(CLOUD_OUT, JSON.stringify(cloud, null, 2), { mode: 0o600 });
+console.log('\nDati per la sveglia delle batterie salvati in:', CLOUD_OUT);
+for (const [sn, c] of Object.entries(cloud.stations)) {
+  const left = c.dskExpires ? Math.round((c.dskExpires - Date.now()) / 3600000) : null;
+  console.log(`  ${sn}: server=${c.servers.length} chiave=${c.dsk ? 'ok' : 'no'}${left != null ? ` scade tra ${left} ore (${new Date(c.dskExpires).toLocaleString()})` : ''}`);
+}
+// Sessione per rinnovare da soli la chiave di sveglia (dura ~30 minuti): il token di accesso, NON la password.
+// Resta in <DATA_DIR>/eufy-session.json (permessi 0600). Chi non la vuole: --no-session (la sveglia dal cloud
+// funzionerà solo finché la chiave è valida). Si cancella il file per togliere l'accesso.
+if (!process.argv.includes('--no-session')) {
+  const SESSION_OUT = path.join(path.dirname(OUT), 'eufy-session.json');
+  const exp = api.getTokenExpiration ? api.getTokenExpiration() : null;
+  fs.writeFileSync(SESSION_OUT, JSON.stringify({ country, token: api.token || null, tokenExpiration: exp ? exp.getTime() : null, persistentData: persistent() }, null, 2), { mode: 0o600 });
+  console.log(`Sessione di rinnovo salvata in: ${SESSION_OUT}${exp ? ` (valida fino al ${exp.toLocaleDateString()})` : ''}`);
+}
+if (process.argv.includes('--wake-only')) { // non tocca eufy-account.json (che ha già le chiavi dei cifrari)
+  console.log('\nOperazione completata (solo dati di sveglia).');
+  process.exit(0);
+}
+
 const result = { accountId, cameras: {} };
 for (const st of stations) {
   const adminId = st.member?.admin_user_id || accountId;

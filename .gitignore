@@ -27,6 +27,9 @@ node_modules/
 *.crt
 *.p12
 *.mobileconfig
+captcha*.png
+eufy-cloud.json
+eufy-session.json
 
 # Log, sistema
 *.log

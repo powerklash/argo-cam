@@ -91,7 +91,13 @@ cd tools/eufy-login && npm install
 EUFY_CIPHERS="<serial>=<cipherId>,..." DATA_DIR=/var/lib/cam-app node login.mjs
 ```
 
-You type the credentials in your terminal; they are not stored. Use `node tools/eufy-discover.js` to find cameras and their cipher IDs on the LAN. Battery cameras (SoloCam) sleep: the app sends discovery packets until they answer and connects immediately; some models (for example the S340) cannot be woken without the Eufy app or motion.
+You type the credentials in your terminal; they are not stored. Use `node tools/eufy-discover.js` to find cameras and their cipher IDs on the LAN. Battery cameras (SoloCam) sleep: the app sends discovery packets until they answer and connects immediately. Some models (for example the S340) do not answer local packets while asleep, so the app can also **wake them through the Eufy P2P servers, like the official app does** (only the wake request goes through the cloud; video stays local). To enable it, run once more:
+
+```bash
+cd tools/eufy-login && DATA_DIR=/var/lib/cam-app node login.mjs --wake-only
+```
+
+This saves `eufy-cloud.json` (P2P servers and a temporary wake key that lasts about 30 minutes) and `eufy-session.json` (your Eufy **access token, not the password**, valid about 30 days), both with restricted permissions. The app renews the key by itself with the token; when the token expires (the log says so) run the command again. Use `--no-session` to skip saving the token (the wake then works only for 30 minutes after each login), or delete `eufy-session.json` to remove access.
 
 ## Configuration (environment variables)
 
