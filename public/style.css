@@ -449,3 +449,17 @@ button.mini, select.mini { font-size: 12px; padding: 3px 8px; margin: 0; width: 
 .tags .mini { margin-left: 4px; }.subj-edit { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; }
 .subj-edit .subj-row { display: inline-flex; gap: 3px; align-items: center; }
 .subj-edit .badge { font-size: 12px; padding: 2px 9px; }
+/* Ricerca automatica delle telecamere (finestra "Nuova telecamera") e avanzamento dell'archiviazione */
+.scan-box { display: grid; gap: 8px; margin: 8px 0; }
+.scan-box > button { justify-self: start; }
+.scan-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+progress { appearance: none; -webkit-appearance: none; border: 0; height: 10px; border-radius: 5px; background: #2b3240; overflow: hidden; accent-color: var(--accent); }
+progress::-webkit-progress-bar { background: #2b3240; border-radius: 5px; }
+progress::-webkit-progress-value { background: var(--accent); border-radius: 5px; transition: width .3s; }
+progress::-moz-progress-bar { background: var(--accent); border-radius: 5px; }
+.scan-progress progress { flex: 1 1 160px; min-width: 120px; }
+.scan-results { display: grid; gap: 6px; }
+.scan-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; background: #1b2029; border-radius: 8px; }
+.arc-progress { display: grid; gap: 4px; margin: 6px 0; }
+.arc-progress progress { width: 100%; }
+.scan-progress[hidden], .arc-progress[hidden], .scan-box[hidden] { display: none; } /* display:flex/grid sopra annullerebbe l'attributo hidden */

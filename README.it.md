@@ -7,6 +7,7 @@ Visualizzatore **multi-telecamera locale** per PC e telefono. Reolink, Eufy (P2P
 ## Funzioni
 
 - **Video dal vivo** di molte telecamere (WebRTC tramite [go2rtc](https://github.com/AlexxIT/go2rtc)), interfaccia per telefono e PC, installabile nella schermata Home, 5 lingue (it, en, fr, de, es).
+- **Ricerca automatica delle telecamere** nella finestra *Nuova telecamera*: con una barra di avanzamento Argo cerca nella rete locale (ricerca ONVIF, broadcast Eufy, scansione delle porte con riconoscimento di Reolink/Hikvision/Dahua/RTSP) e mostra solo le telecamere non ancora aggiunte, pronte per compilare il modulo. Scansiona la rete privata del server (fino a una /22).
 - **Marche**: Reolink (dirette o con Home Hub, anche a batteria), Eufy in P2P locale (senza RTSP; le batterie si possono svegliare a richiesta dove il modello lo consente), ONVIF, RTSP/HTTP generico.
 - **Eventi** (movimento, persona, veicolo, animale, pacco, campanello, incendio, allagamento) con immagine, filmato e anteprima H.264 leggera per la riproduzione; l'originale resta alla massima qualità per il download.
 - **Ricerca intelligente** in linguaggio naturale («auto bianche passate martedì sera»).

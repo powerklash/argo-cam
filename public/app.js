@@ -532,8 +532,89 @@ function openDialog(cam = null, preset = null) {
   form.elements.saveEvents.checked = cam ? cam.saveEvents : true;
   renderFields(brand, cam?.params || preset?.params);
   fillHaRows(cam?.ha || []);
+  $('#scan-box').hidden = !!cam; // la ricerca serve per aggiungere telecamere nuove, non per modificarne una
+  resetScan();
   dlg.showModal();
 }
+
+// ---------- ricerca automatica di telecamere nella rete ----------
+let scanId = null;
+let scanTimer = null;
+function stopScan() {
+  clearInterval(scanTimer);
+  scanTimer = null;
+  if (scanId) api('DELETE', `/api/discovery/${scanId}`).catch(() => {});
+  scanId = null;
+}
+function resetScan() {
+  stopScan();
+  $('#scan-progress').hidden = true;
+  $('#scan-status').hidden = true;
+  $('#scan-results').replaceChildren();
+  $('#btn-scan').disabled = false;
+}
+
+/** Compila il modulo con una telecamera trovata (marca, indirizzo, nome; per le Eufy anche il numero di serie). */
+function useFound(d) {
+  const brand = state.brands.some((b) => b.id === d.brand) ? d.brand : 'custom';
+  form.elements.brand.value = brand;
+  form.elements.brand.dispatchEvent(new Event('change'));
+  if (!form.elements.name.value) form.elements.name.value = d.name || d.detail || d.host;
+  const set = (key, value) => { const input = form.elements[`p_${key}`]; if (input && value) input.value = value; };
+  if (brand === 'custom') set('mainUrl', `rtsp://${d.host}:${d.rtspPort || 554}/`);
+  else set('host', d.host);
+  if (brand === 'eufyp2p') { set('serial', d.serial); form.elements.battery.checked = !!d.battery; }
+  const next = [...form.querySelectorAll('#fields input')].find((i) => i.required && !i.value) || form.querySelector('#fields input');
+  next?.focus();
+}
+
+function showFound(list) {
+  const box = $('#scan-results');
+  box.replaceChildren(...list.map((d) => el('div', { class: 'scan-row' },
+    el('div', {}, el('b', {}, d.host), el('span', { class: 'note' }, ` ${t(`brand.${d.brand}`, null, d.brand)}${d.detail ? ` · ${d.detail}` : ''}`)),
+    el('button', { type: 'button', class: 'primary', onclick: () => useFound(d) }, t('scan.use')))));
+}
+
+async function startScan() {
+  resetScan();
+  const btn = $('#btn-scan');
+  const bar = $('#scan-bar');
+  const pct = $('#scan-pct');
+  const status = $('#scan-status');
+  btn.disabled = true;
+  $('#scan-progress').hidden = false;
+  bar.value = 0;
+  pct.textContent = t('scan.phase.broadcast');
+  const finish = (text, bad = false) => {
+    stopScan();
+    $('#scan-progress').hidden = true;
+    btn.disabled = false;
+    status.hidden = false;
+    status.className = bad ? 'note err' : 'note';
+    status.textContent = text;
+  };
+  try {
+    scanId = (await api('POST', '/api/discovery')).id;
+  } catch (err) { finish(errorText(err), true); return; }
+  const id = scanId;
+  scanTimer = setInterval(async () => {
+    try {
+      const s = await api('GET', `/api/discovery/${id}`);
+      if (id !== scanId) return;
+      bar.value = s.progress;
+      pct.textContent = `${t(`scan.phase.${s.phase}`)} · ${s.progress} %`;
+      showFound(s.found);
+      if (s.done) {
+        scanId = null; // già terminata: niente annullamento
+        if (s.error) finish(s.error === 'no_network' ? t('scan.noNetwork') : s.error, true);
+        else finish(s.found.length ? t('scan.found', { n: s.found.length }) : t('scan.none'));
+      }
+    } catch (err) { finish(errorText(err), true); }
+  }, 500);
+}
+$('#btn-scan').addEventListener('click', startScan);
+$('#btn-scan-stop').addEventListener('click', () => { const n = $('#scan-results').children.length; stopScan(); $('#scan-progress').hidden = true; $('#btn-scan').disabled = false; const s = $('#scan-status'); s.hidden = false; s.className = 'note'; s.textContent = t('scan.stopped', { n }); });
+dlg.addEventListener('close', stopScan);
 
 form.elements.brand.addEventListener('change', () => {
   const brand = form.elements.brand.value;

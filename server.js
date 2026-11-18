@@ -30,6 +30,7 @@ import * as archive from './lib/archive.js';
 import * as battery from './lib/battery.js';
 import * as hazard from './lib/hazard.js';
 import * as secrets from './lib/secrets.js';
+import * as discovery from './lib/discovery.js';
 import os from 'node:os';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { localize, langOf } from './lib/errors-i18n.js';
@@ -591,6 +592,22 @@ async function handleApi(req, res, url) {
     });
     const unknown = found.filter((f) => !f.serial).map((f) => ({ ip: f.ip }));
     return json(res, 200, { configured: eufy.isConfigured(), devices, unknown });
+  }
+  // ----- ricerca automatica di telecamere nella rete (finestra "Nuova telecamera") -----
+  if (parts[1] === 'discovery') {
+    needAdmin();
+    if (!parts[2] && req.method === 'POST') {
+      const id = discovery.start({
+        known: discovery.knownHosts(cameras, eufy.hostOf),
+        accountSerials: new Map(eufy.accountDevices().filter((d) => d.did).map((d) => [d.did, d.serial])),
+        knownSerials: new Set(cameras.filter((c) => c.brand === 'eufyp2p').map((c) => c.params.serial)),
+      });
+      return json(res, 200, { id });
+    }
+    const st = parts[2] ? discovery.status(parts[2]) : null;
+    if (!st) throw new HttpError(404, 'Non trovato');
+    if (req.method === 'GET') return json(res, 200, st);
+    if (req.method === 'DELETE') { discovery.cancel(parts[2]); return json(res, 200, { ok: true }); }
   }
   // ----- Eufy: accesso al cloud dalle impostazioni (account, sveglia delle batterie) -----
   if (parts[1] === 'eufy' && parts[2] === 'cloud') {

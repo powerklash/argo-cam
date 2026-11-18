@@ -308,6 +308,9 @@ function archiveSection() {
 
   const say = (text, bad = false) => { out.className = bad ? 'note err' : 'note ok'; out.textContent = text; };
   let timer = null;
+  const bar = el('progress', { max: 1, value: 0 });
+  const barLabel = el('span', { class: 'note' });
+  const barBox = el('div', { class: 'arc-progress', hidden: true }, barLabel, bar);
   const showStatus = (d) => {
     const u = d.usage;
     const lines = [
@@ -318,8 +321,14 @@ function archiveSection() {
     ];
     info.replaceChildren(...lines.filter(Boolean).map((x) => el('div', {}, x)));
     const s = d.status;
-    if (s.running) say(t('arc.running', { done: s.done, total: s.total }));
-    else if (s.last) {
+    // Avanzamento dell'archiviazione (anche se l'ha avviata il timer): barra con filmati fatti / da fare.
+    barBox.hidden = !s.running;
+    if (s.running) {
+      if (s.total > 0) { bar.max = s.total; bar.value = s.done; barLabel.textContent = t('arc.running', { done: s.done, total: s.total }); }
+      else { bar.removeAttribute('value'); barLabel.textContent = t('arc.preparing'); }
+      out.textContent = '';
+      if (!timer) watch();
+    } else if (s.last) {
       const l = s.last;
       say(t('arc.last', { moved: l.moved, size: fmtBytes(l.bytes), failed: l.failed }) + (l.error ? ` ${t('arc.lastError', { msg: l.error })}` : ''), !!l.error && !l.moved);
     }
@@ -353,19 +362,30 @@ function archiveSection() {
       say(t('arc.testOk'));
     }),
   }, t('arc.test'));
+  // Controlla lo stato ogni secondo finché l'archiviazione è in corso (la barra segue "fatti / da fare").
+  function watch() {
+    clearInterval(timer);
+    timer = setInterval(async () => {
+      if (!document.body.contains(info)) { clearInterval(timer); timer = null; return; }
+      try {
+        const d = await api('GET', '/api/admin/archive');
+        if (!d.status.running) { clearInterval(timer); timer = null; }
+        showStatus(d);
+      } catch { /* si riprova */ }
+    }, 1000);
+  }
   const runNow = el('button', {
     type: 'button',
     onclick: guard(async () => {
       await api('POST', '/api/admin/archive/run');
-      clearInterval(timer);
-      timer = setInterval(async () => {
-        if (!document.body.contains(info)) { clearInterval(timer); return; }
-        try { const d = await api('GET', '/api/admin/archive'); showStatus(d); if (!d.status.running) clearInterval(timer); } catch { /* si riprova */ }
-      }, 2000);
+      barBox.hidden = false; // subito, prima del primo aggiornamento: la barra parte indeterminata
+      bar.removeAttribute('value');
+      barLabel.textContent = t('arc.preparing');
+      watch();
     }),
   }, t('arc.runNow'));
   load().catch(() => {});
-  return section(t('arc.title'), el('p', { class: 'note' }, t('arc.hint')), info, row(t('arc.type'), driver), fields,
+  return section(t('arc.title'), el('p', { class: 'note' }, t('arc.hint')), info, barBox, row(t('arc.type'), driver), fields,
     row(t('arc.after'), after), row(t('arc.keep'), keep), el('p', { class: 'note' }, t('arc.keepHint')), enabled.node,
     el('div', { class: 'srow-inline' }, save, test, runNow), out);
 }

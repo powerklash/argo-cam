@@ -61,6 +61,16 @@
       <h2 id="dlg-title"></h2>
       <label><span data-i18n="dlg.name">Nome</span><input name="name" required maxlength="60"></label>
       <label><span data-i18n="dlg.brand">Marca</span><select name="brand"></select></label>
+      <div id="scan-box" class="scan-box">
+        <button type="button" id="btn-scan" data-i18n="scan.button">Cerca telecamere in rete</button>
+        <div id="scan-progress" class="scan-progress" hidden>
+          <progress id="scan-bar" max="100" value="0"></progress>
+          <span id="scan-pct" class="note"></span>
+          <button type="button" id="btn-scan-stop" data-i18n="scan.stop">Interrompi</button>
+        </div>
+        <p id="scan-status" class="note" hidden></p>
+        <div id="scan-results" class="scan-results"></div>
+      </div>
       <p id="note" class="note"></p>
       <div id="fields"></div>
       <label class="check"><input type="checkbox" name="preload" checked><span data-i18n="dlg.preload"></span></label>

@@ -9,7 +9,7 @@ const { isKnown } = await import(pathToFileURL(path.join(root, 'lib', 'errors-i1
 const files = ['server.js', ...fs.readdirSync(path.join(root, 'lib')).filter((f) => f.endsWith('.js')).map((f) => `lib/${f}`)];
 const re = /(?:HttpError\(\d+,\s*|new Error\(|new AuthError\([^,]+,\s*)(['`"])((?:(?!\1)[^\\]|\\.)*)\1/g;
 // Messaggi tecnici che non arrivano mai all'utente o sono codici (la lingua li gestisce l'interfaccia).
-const IGNORE = new Set(['ASLEEP', 'NOT_SUPPORTED', 'illeggibile']);
+const IGNORE = new Set(['ASLEEP', 'NOT_SUPPORTED', 'illeggibile', 'no_network']);
 const IGNORE_RE = [/^HTTP \$\{/, /^ffmpeg: /];
 let missing = 0;
 for (const f of files) {
