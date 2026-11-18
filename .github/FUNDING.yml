@@ -1,0 +1,10 @@
+# Pulsante "Sponsor" della repository (https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository)
+# Funziona solo con i servizi attivati: GitHub Sponsors va abilitato su https://github.com/sponsors/powerklash
+github: [powerklash]
+# Altre piattaforme: togli il commento e metti il tuo nome utente.
+# ko_fi: nomeutente
+# buy_me_a_coffee: nomeutente
+# patreon: nomeutente
+# liberapay: nomeutente
+# open_collective: nomeutente
+# custom: ["https://esempio.it/dona"]
