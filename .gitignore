@@ -1,0 +1,34 @@
+# Dati dell'installazione: telecamere, password, database, eventi, modelli, certificati
+/data/
+*.db
+*.db-shm
+*.db-wal
+cameras.json
+settings.json
+eufy-account.json
+eufy-hosts.json
+archive.json
+homeassistant.json
+first-run-admin.txt
+go2rtc.yaml
+
+# Binari e pacchetti generati
+/bin/
+/dist/
+*.tar
+*.tar.gz
+node_modules/
+
+# Segreti e ambiente
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.p12
+*.mobileconfig
+
+# Log, sistema
+*.log
+.DS_Store
+Thumbs.db

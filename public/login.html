@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e1116">
+  <title>Argo</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <img class="login-logo" src="icon.svg" alt="" width="64" height="64">
+    <h1>Argo</h1>
+    <form id="login" autocomplete="on">
+      <label><span data-i18n="login.user">Utente</span>
+        <input name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus>
+      </label>
+      <label><span data-i18n="login.password">Password</span>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="error" class="error" role="alert" hidden></p>
+      <button class="primary" id="submit" type="submit" data-i18n="login.submit">Entra</button>
+      <button class="linklike" id="forgot" type="button" data-i18n="login.forgot">Password dimenticata?</button>
+    </form>
+    <form id="recover" autocomplete="off" hidden>
+      <h2 data-i18n="rec.title">Recupero password amministratore</h2>
+      <div id="rec-step1">
+        <p class="note" data-i18n="rec.intro"></p>
+        <label><span data-i18n="login.user">Utente</span>
+          <input name="username" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off">
+        </label>
+        <button class="primary" id="rec-next" type="button" data-i18n="rec.continue">Continua</button>
+      </div>
+      <div id="rec-step2" hidden>
+        <div id="rec-questions"></div>
+        <label><span data-i18n="rec.newPassword">Nuova password</span>
+          <input name="pw1" type="password" autocomplete="new-password" minlength="8">
+        </label>
+        <label><span data-i18n="rec.repeat">Ripeti la nuova password</span>
+          <input name="pw2" type="password" autocomplete="new-password" minlength="8">
+        </label>
+        <button class="primary" id="rec-submit" type="submit" data-i18n="rec.reset">Reimposta la password</button>
+      </div>
+      <p id="rec-error" class="error" role="alert" hidden></p>
+      <p id="rec-ok" class="note ok" role="status" hidden></p>
+      <button class="linklike" id="rec-back" type="button" data-i18n="rec.back">← Torna all’accesso</button>
+    </form>
+    <a class="linklike" id="cert-link" href="/cert.html" hidden data-i18n="login.cert">Installa il certificato sul telefono</a>
+    <p class="note" data-i18n="login.footer"></p>
+    <select id="lang" aria-label="Language"></select>
+  </main>
+  <script type="module" src="login.js"></script>
+</body>
+</html>

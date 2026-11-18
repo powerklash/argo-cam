@@ -1,0 +1,17 @@
+# Third-party software
+
+Nothing below is bundled in the repository: it is downloaded at install time or by `npm`/`tools/get-models.mjs`.
+
+| Component | Use | License |
+|---|---|---|
+| [go2rtc](https://github.com/AlexxIT/go2rtc) | camera streaming (RTSP/WebRTC) | MIT |
+| [FFmpeg](https://ffmpeg.org) | video capture and conversion (system package) | LGPL/GPL |
+| [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) | runs the recognition models | MIT |
+| [OpenCV Zoo](https://github.com/opencv/opencv_zoo) – YOLOX | person/vehicle/animal detection | Apache-2.0 |
+| OpenCV Zoo – YuNet | face detection | MIT |
+| OpenCV Zoo – SFace | face recognition | Apache-2.0 |
+| OpenCV Zoo – MobileNetV2 | pet and vehicle appearance | Apache-2.0 |
+| [eufy-security-client](https://github.com/bropat/eufy-security-client) | one-time Eufy login tool only (`tools/eufy-login`) | MIT |
+| Node.js, Samba client (`smbclient`) | runtime / network archive | MIT / GPL |
+
+Camera brand names (Reolink, Eufy, ONVIF) are trademarks of their owners; this project is not affiliated with them.

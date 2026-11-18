@@ -1,0 +1,9 @@
+{
+  "name": "eufy-login",
+  "private": true,
+  "type": "module",
+  "description": "Lettura una-tantum di accountId e chiave cifrario dal cloud Eufy, per l'uso locale.",
+  "dependencies": {
+    "eufy-security-client": "^3.0.0"
+  }
+}

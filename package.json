@@ -1,0 +1,17 @@
+{
+    "name":  "cam-app",
+    "version":  "0.1.0",
+    "description":  "Argo: local-first multi-camera viewer (Reolink, Eufy P2P, ONVIF, RTSP) with events, smart search and on-device recognition",
+    "type":  "module",
+    "private":  true,
+    "scripts":  {
+                    "start":  "node server.js"
+                },
+    "dependencies":  {
+                         "onnxruntime-web":  "1.31.1"
+                     },
+    "license":  "MIT",
+    "engines":  {
+                    "node":  "\u003e=22"
+                }
+}
