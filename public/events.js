@@ -247,9 +247,41 @@ const badge = (text, cls = '') => el('span', { class: `badge ${cls}` }, text);
 const SPECIES_ICON = { cat: '🐈', dog: '🐕', bird: '🐦', horse: '🐴', sheep: '🐑', cow: '🐄' };
 /** Chi è stato riconosciuto nell'evento: una persona (👤) o un animale (🐾). */
 const whoBadge = (e) => [
-  e.personName && badge(`${e.personSpecies ? (SPECIES_ICON[e.personSpecies] || '🐾') : '👤'} ${e.personName}`),
-  e.vehicleName && badge(`${VEHICLE_ICON[e.vehicleSpecies] || '🚗'} ${e.vehicleName}`),
+  e.personId && badge(`${e.personSpecies ? (SPECIES_ICON[e.personSpecies] || '🐾') : '👤'} ${e.personName || `${t('people.unknown')} #${e.personId}`}`),
+  e.vehicleId && badge(`${VEHICLE_ICON[e.vehicleSpecies] || '🚗'} ${e.vehicleName || `${t('people.unknown')} #${e.vehicleId}`}`),
 ];
+
+const SUBJECT_KINDS = new Set(['person', 'face', 'vehicle', 'pet']);
+const eventGroup = (e) => (e.kind === 'vehicle' ? 'vehicles' : e.kind === 'pet' ? 'pets' : 'people');
+
+/** Correzione di chi/cosa è stato riconosciuto nell'evento (solo amministratore): sceglie un altro, uno nuovo o nessuno. */
+function whoEditor(e) {
+  const btn = el('button', { type: 'button', class: 'mini' }, `✎ ${t('ev.who')}`);
+  btn.onclick = async () => {
+    btn.disabled = true;
+    let people = [];
+    try { people = await api('GET', '/api/persons'); } catch (err) { toast(errorText(err), { kind: 'err' }); btn.disabled = false; return; }
+    const current = e.kind === 'vehicle' ? e.vehicleId : e.personId;
+    const sel = el('select', { class: 'mini' }, new Option(t('ev.whoPick'), ''));
+    for (const p of people.filter((x) => groupOf(x) === eventGroup(e) && x.id !== current)) sel.add(new Option(p.name || `${t('people.unknown')} #${p.id}`, p.id));
+    sel.add(new Option(t('ev.whoNew'), 'new'));
+    if (current) sel.add(new Option(t('ev.whoNone'), 'none'));
+    sel.onchange = async () => {
+      if (!sel.value) return;
+      if (sel.value === 'none' && !confirm(t('ev.whoNoneConfirm'))) { sel.value = ''; return; }
+      try {
+        const upd = await api('POST', `/api/events/${e.id}/subject`, { personId: sel.value === 'none' ? null : sel.value === 'new' ? 'new' : Number(sel.value) });
+        const i = results.findIndex((x) => x.id === e.id);
+        if (i >= 0) results[i] = upd;
+        renderResults();
+        showDetail(upd);
+      } catch (err) { toast(errorText(err), { kind: 'err' }); }
+    };
+    btn.replaceWith(sel);
+    sel.focus();
+  };
+  return btn;
+}
 
 function card(e) {
   const thumb = e.snapshot
@@ -332,7 +364,7 @@ function showDetail(e) {
     el('h3', {}, e.camName), el('p', {}, fmtDate(e.ts, { dateStyle: 'full', timeStyle: 'medium' })),
     el('div', { class: 'tags' }, badge(t(`kind.${e.kind}`), `k-${e.kind}`),
       e.vehicleType && badge(t(`vtype.${e.vehicleType}`)), e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
-      e.plate && badge(`${t('ev.plate')} ${e.plate}`), whoBadge(e)),
+      e.plate && badge(`${t('ev.plate')} ${e.plate}`), whoBadge(e), isAdmin() && SUBJECT_KINDS.has(e.kind) && whoEditor(e)),
     e.clip && e.snapshot ? el('a', { href: `/media/${e.snapshot}`, target: '_blank' }, '🖼') : null,
     e.clip ? el('a', { class: 'dl', href: `/media/${e.clip}`, download: e.clip.split('/').pop() }, `⬇ ${t('ev.downloadOrig')}`) : null,
     el('div', { class: 'row' },
@@ -477,6 +509,32 @@ async function loadPeople(kind = 'people') {
       el('span', {}, t('people.similar', { name: p.suggestName || `${t('people.unknown')} #${p.suggestId}`, n: Math.min(99, Math.round(((p.suggestSim || 0) / thrOf) * 100)) })),
       el('button', { type: 'button', class: 'primary', onclick: async () => { await api('POST', `/api/persons/${p.id}/suggestion`, { accept: true }); loadPeople(kind); } }, t('people.sameYes')),
       el('button', { type: 'button', onclick: async () => { await api('POST', `/api/persons/${p.id}/suggestion`, { accept: false }); loadPeople(kind); } }, t('people.sameNo')));
+    // Immagini imparate da questo soggetto: da qui si tolgono o si spostano quelle assegnate per errore.
+    const samples = el('div', { class: 'samples', hidden: true });
+    const loadSamples = async () => {
+      samples.replaceChildren(el('p', { class: 'note' }, '…'));
+      let list = [];
+      try { list = await api('GET', `/api/persons/${p.id}/faces`); } catch (err) { samples.replaceChildren(el('p', { class: 'note err' }, errorText(err))); return; }
+      const sample = (f) => {
+        const move = el('select', { class: 'mini' }, new Option(t('people.sampleMove'), ''), ...others(p).map((o) => new Option(o.name || `${t('people.unknown')} #${o.id}`, o.id)), new Option(t('people.sampleNew'), 'new'));
+        move.onchange = async () => {
+          if (!move.value) return;
+          try { await api('POST', `/api/persons/${p.id}/faces/${f.id}/move`, { into: move.value === 'new' ? 'new' : Number(move.value) }); loadPeople(kind); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+        };
+        return el('div', { class: 'sample' },
+          f.crop ? el('img', { src: `/media/${f.crop}`, alt: '', loading: 'lazy' }) : el('div', { class: 'noimg' }, '·'),
+          el('span', { class: 'note' }, [f.camName, fmtDate(f.ts, { dateStyle: 'short', timeStyle: 'short' })].filter(Boolean).join(' · ')),
+          move,
+          el('button', {
+            type: 'button', class: 'danger mini', title: t('people.sampleRemove'),
+            onclick: async () => {
+              if (!confirm(t('people.sampleConfirm'))) return;
+              try { await api('DELETE', `/api/persons/${p.id}/faces/${f.id}`); loadPeople(kind); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+            },
+          }, '✕ ' + t('people.sampleRemove')));
+      };
+      samples.replaceChildren(...(list.length ? list.map(sample) : [el('p', { class: 'note' }, t('people.noSamples'))]));
+    };
     return el('div', { class: 'person' },
       p.crop ? el('img', { src: `/media/${p.crop}`, alt: '' }) : el('div', { class: 'noimg' }, p.species ? (VEHICLE_SPECIES.has(p.species) ? '🚗' : '🐾') : '👤'),
       el('div', { class: 'pinfo' }, name, similar,
@@ -484,11 +542,13 @@ async function loadPeople(kind = 'people') {
         el('div', { class: 'row' },
           el('button', { type: 'button', onclick: async () => { await api('PUT', `/api/persons/${p.id}`, { name: name.value }); loadPeople(kind); } }, t('people.rename')),
           el('button', { type: 'button', onclick: () => { personFilter = p.id; switchTab('events'); runSearch(); } }, t('ev.tabEvents')),
+          el('button', { type: 'button', onclick: () => { samples.hidden = !samples.hidden; if (!samples.hidden) loadSamples(); } }, t('people.samples', { n: p.faces })),
           merge,
           el('button', {
             type: 'button', class: 'danger',
             onclick: async () => { if (confirm(t('people.deleteConfirm'))) { await api('DELETE', `/api/persons/${p.id}`); loadPeople(kind); } },
-          }, '✕'))));
+          }, '✕')),
+        samples));
   };
   // Persone, animali e veicoli sono tre schede separate; chi ha un suggerimento da confermare va in cima.
   const shown = people.filter((p) => groupOf(p) === kind).sort((a, b) => !!b.suggestId - !!a.suggestId);

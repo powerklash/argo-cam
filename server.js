@@ -593,6 +593,24 @@ async function handleApi(req, res, url) {
       } else db.clearSuggestion(id);
       return json(res, 200, { ok: true });
     }
+    if (parts[3] === 'faces') { // immagini imparate di un soggetto: elenco, rimozione o spostamento di una sbagliata
+      if (!parts[4] && req.method === 'GET') return json(res, 200, db.facesOfPerson(id));
+      const faceId = Number(parts[4]);
+      if (!db.facesOfPerson(id).some((f) => f.id === faceId)) throw new HttpError(404, 'Immagine non trovata');
+      if (!parts[5] && req.method === 'DELETE') {
+        for (const rel of db.removeFace(faceId) || []) fs.rm(path.join(db.EVENTS_DIR, rel), { force: true }, () => {});
+        recognition.invalidateFaces();
+        return json(res, 200, { ok: true });
+      }
+      if (parts[5] === 'move' && req.method === 'POST') {
+        const raw = (await readBody(req)).into;
+        const into = raw === 'new' ? db.createPerson(null, db.personSpecies(id)) : Number(raw);
+        if (!into || into === id || db.personSpecies(into) !== db.personSpecies(id)) throw new HttpError(400, 'Soggetto di destinazione non valido');
+        db.moveFace(faceId, into);
+        recognition.invalidateFaces();
+        return json(res, 200, { ok: true, into });
+      }
+    }
     if (req.method === 'PUT') {
       const name = String((await readBody(req)).name || '').trim().slice(0, 60) || null;
       const same = name && db.personByName(name);
@@ -664,6 +682,26 @@ async function handleApi(req, res, url) {
       const e = db.getEvent(Number(parts[2]));
       if (!e || (!isAdmin && level(e.camId) < 1)) throw new HttpError(404, 'Evento non trovato');
       return json(res, 200, isAdmin ? e : PUBLIC_ONLY_FIELDS(e));
+    }
+    if (parts[2] && parts[3] === 'subject' && req.method === 'POST') { // corregge chi/cosa è stato riconosciuto nell'evento
+      needAdmin();
+      const eventId = Number(parts[2]);
+      const e = db.getEvent(eventId);
+      if (!e) throw new HttpError(404, 'Evento non trovato');
+      const group = db.subjectGroupOfKind(e.kind);
+      const raw = (await readBody(req)).personId;
+      let into = null;
+      if (raw === 'new') {
+        const old = e.kind === 'vehicle' ? e.vehicleId : e.personId;
+        const species = (old && db.personSpecies(old)) || (group === 'vehicles' ? (e.vehicleType || 'car') : group === 'pets' ? 'dog' : null);
+        into = db.createPerson(null, species);
+      } else if (raw !== null && raw !== undefined) {
+        into = Number(raw);
+        if (!into || !db.personExists(into) || db.subjectGroupOfSpecies(db.personSpecies(into)) !== group) throw new HttpError(400, 'Soggetto non valido per questo evento');
+      }
+      for (const rel of db.reassignEvent(eventId, into) || []) fs.rm(path.join(db.EVENTS_DIR, rel), { force: true }, () => {});
+      recognition.invalidateFaces();
+      return json(res, 200, db.getEvent(eventId));
     }
     if (parts[2] && req.method === 'DELETE') {
       needAdmin();

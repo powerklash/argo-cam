@@ -438,3 +438,12 @@ dialog .bell-controls label.check { margin: 0; }
 @keyframes alarmpulse { from { filter: brightness(1); } to { filter: brightness(1.35); } }
 .hzcam { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 4px 0; }
 .hzcam b { flex: 1 1 120px; }
+
+/* Correzione delle assegnazioni: immagini imparate di un soggetto e selettore "chi è" nell'evento */
+.person .samples { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; margin-top: 4px; }
+.person .samples .sample { display: flex; flex-direction: column; gap: 4px; padding: 4px; background: #232a35; border-radius: 6px; }
+.person .samples .sample img, .person .samples .sample .noimg { width: 100%; height: auto; aspect-ratio: 1; border-radius: 6px; object-fit: cover; }
+.person .samples .sample .note { font-size: 11px; }
+button.mini, select.mini { font-size: 12px; padding: 3px 8px; margin: 0; width: auto; }
+.person .samples select.mini { width: 100%; }
+.tags .mini { margin-left: 4px; }
