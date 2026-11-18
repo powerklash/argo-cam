@@ -12,7 +12,7 @@ A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (loc
 - **Brands**: Reolink (direct or through a Home Hub, including battery cameras), Eufy over local P2P (no RTSP needed, battery cameras can be woken on request where the model allows it), ONVIF, generic RTSP/HTTP.
 - **Events** (motion, person, vehicle, pet, package, doorbell, fire, flood) with snapshot, clip and a lightweight H.264 preview for playback; the original clip stays at full quality for download.
 - **Smart search** in natural language ("white cars last Tuesday evening").
-- **Local recognition** (no cloud): faces, individual pets and individual vehicles get their own tab where you name them; new subjects that look like a known one are *suggested* for merging.
+- **Local recognition** (no cloud): faces, individual pets and individual vehicles get their own tab where you name them; new subjects that look like a known one are *suggested* for merging. A video can show several people, pets or vehicles at once: each is recognised and shown on the event, and the admin can change, remove or add subjects (and move or remove the learned images) when a match is wrong.
 - **Red overlay box** that follows the subject in event clips (drawn on top of the video, can be switched off).
 - **Fire / flood alerts** (heuristic checks on camera video, per camera, with siren and banner). They are approximate and **do not replace** a smoke or flood detector.
 - **Network archive**: move old clips to SMB, WebDAV or a mounted folder while keeping them searchable and playable.

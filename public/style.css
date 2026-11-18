@@ -446,4 +446,6 @@ dialog .bell-controls label.check { margin: 0; }
 .person .samples .sample .note { font-size: 11px; }
 button.mini, select.mini { font-size: 12px; padding: 3px 8px; margin: 0; width: auto; }
 .person .samples select.mini { width: 100%; }
-.tags .mini { margin-left: 4px; }
+.tags .mini { margin-left: 4px; }.subj-edit { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 6px 0; }
+.subj-edit .subj-row { display: inline-flex; gap: 3px; align-items: center; }
+.subj-edit .badge { font-size: 12px; padding: 2px 9px; }

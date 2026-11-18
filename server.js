@@ -369,7 +369,7 @@ function sendFile(req, res, file, knownStat) {
 }
 
 // ---------- API ----------
-const PUBLIC_ONLY_FIELDS = (e) => ({ ...e, personId: null, personName: null, vehicleId: null, vehicleName: null }); // volti e nomi solo per l'amministratore
+const PUBLIC_ONLY_FIELDS = (e) => ({ ...e, personId: null, personName: null, vehicleId: null, vehicleName: null, subjects: [] }); // volti e nomi solo per l'amministratore
 
 async function handleAuthApi(req, res, parts, user) {
   const secure = isSecure(req);
@@ -683,23 +683,31 @@ async function handleApi(req, res, url) {
       if (!e || (!isAdmin && level(e.camId) < 1)) throw new HttpError(404, 'Evento non trovato');
       return json(res, 200, isAdmin ? e : PUBLIC_ONLY_FIELDS(e));
     }
-    if (parts[2] && parts[3] === 'subject' && req.method === 'POST') { // corregge chi/cosa è stato riconosciuto nell'evento
+    if (parts[2] && parts[3] === 'subject' && req.method === 'POST') { // corregge chi/cosa e' stato riconosciuto nell'evento
       needAdmin();
+      // Un evento puo' avere piu' soggetti (persone, animali, veicoli): si agisce su uno alla volta.
+      //  { action: 'change', from, to: id|'new' }  sostituisce un soggetto
+      //  { action: 'remove', from }               toglie un soggetto (e la sua immagine imparata)
+      //  { action: 'add', to: id|'new', group }    aggiunge un altro soggetto presente nel video
       const eventId = Number(parts[2]);
       const e = db.getEvent(eventId);
       if (!e) throw new HttpError(404, 'Evento non trovato');
-      const group = db.subjectGroupOfKind(e.kind);
-      const raw = (await readBody(req)).personId;
-      let into = null;
-      if (raw === 'new') {
-        const old = e.kind === 'vehicle' ? e.vehicleId : e.personId;
-        const species = (old && db.personSpecies(old)) || (group === 'vehicles' ? (e.vehicleType || 'car') : group === 'pets' ? 'dog' : null);
-        into = db.createPerson(null, species);
-      } else if (raw !== null && raw !== undefined) {
-        into = Number(raw);
-        if (!into || !db.personExists(into) || db.subjectGroupOfSpecies(db.personSpecies(into)) !== group) throw new HttpError(400, 'Soggetto non valido per questo evento');
-      }
-      for (const rel of db.reassignEvent(eventId, into) || []) fs.rm(path.join(db.EVENTS_DIR, rel), { force: true }, () => {});
+      const body = await readBody(req);
+      const action = body.action;
+      const from = body.from == null ? null : Number(body.from);
+      if (action !== 'add' && !e.subjects.some((s) => s.id === from)) throw new HttpError(400, 'Soggetto non presente nell\'evento');
+      let to = null;
+      if (action === 'change' || action === 'add') {
+        const group = action === 'change' ? db.subjectGroupOfSpecies(db.personSpecies(from)) : ['people', 'pets', 'vehicles'].includes(body.group) ? body.group : db.subjectGroupOfKind(e.kind);
+        if (body.to === 'new') {
+          const species = action === 'change' ? db.personSpecies(from) : group === 'vehicles' ? (e.vehicleType || 'car') : group === 'pets' ? 'dog' : null;
+          to = db.createPerson(null, species);
+        } else {
+          to = Number(body.to);
+          if (!to || !db.personExists(to) || db.subjectGroupOfSpecies(db.personSpecies(to)) !== group) throw new HttpError(400, 'Soggetto non valido');
+        }
+      } else if (action !== 'remove') throw new HttpError(400, 'Azione non valida');
+      for (const rel of db.replaceSubject(eventId, action === 'add' ? null : from, action === 'remove' ? null : to) || []) fs.rm(path.join(db.EVENTS_DIR, rel), { force: true }, () => {});
       recognition.invalidateFaces();
       return json(res, 200, db.getEvent(eventId));
     }

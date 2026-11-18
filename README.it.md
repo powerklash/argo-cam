@@ -12,7 +12,7 @@ Visualizzatore **multi-telecamera locale** per PC e telefono. Reolink, Eufy (P2P
 - **Marche**: Reolink (dirette o con Home Hub, anche a batteria), Eufy in P2P locale (senza RTSP; le batterie si possono svegliare a richiesta dove il modello lo consente), ONVIF, RTSP/HTTP generico.
 - **Eventi** (movimento, persona, veicolo, animale, pacco, campanello, incendio, allagamento) con immagine, filmato e anteprima H.264 leggera per la riproduzione; l'originale resta alla massima qualità per il download.
 - **Ricerca intelligente** in linguaggio naturale («auto bianche passate martedì sera»).
-- **Riconoscimento locale** (niente cloud): volti, singoli animali e singoli veicoli hanno una scheda dove dare un nome; un soggetto nuovo che somiglia a uno noto viene **suggerito** per l'unione.
+- **Riconoscimento locale** (niente cloud): volti, singoli animali e singoli veicoli hanno una scheda dove dare un nome; un soggetto nuovo che somiglia a uno noto viene **suggerito** per l'unione. Un video può mostrare più persone, animali o veicoli insieme: ognuno viene riconosciuto e mostrato nell'evento, e l'amministratore può cambiare, togliere o aggiungere soggetti (e spostare o togliere le immagini imparate) quando un abbinamento è sbagliato.
 - **Riquadro rosso** in sovraimpressione che segue la figura nei filmati (non inciso nel video, si può togliere).
 - **Allerta incendio e allagamento** (controlli euristici sul video, per telecamera, con sirena e banner). Sono approssimativi: **non sostituiscono** un rivelatore di fumo o di allagamento.
 - **Archivio di rete**: sposta i filmati vecchi su SMB, WebDAV o cartella montata, restando ricercabili e riproducibili.

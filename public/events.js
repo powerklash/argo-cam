@@ -245,42 +245,73 @@ function chipText(c) {
 
 const badge = (text, cls = '') => el('span', { class: `badge ${cls}` }, text);
 const SPECIES_ICON = { cat: '🐈', dog: '🐕', bird: '🐦', horse: '🐴', sheep: '🐑', cow: '🐄' };
-/** Chi è stato riconosciuto nell'evento: una persona (👤) o un animale (🐾). */
-const whoBadge = (e) => [
-  e.personId && badge(`${e.personSpecies ? (SPECIES_ICON[e.personSpecies] || '🐾') : '👤'} ${e.personName || `${t('people.unknown')} #${e.personId}`}`),
-  e.vehicleId && badge(`${VEHICLE_ICON[e.vehicleSpecies] || '🚗'} ${e.vehicleName || `${t('people.unknown')} #${e.vehicleId}`}`),
-];
+/** Chi è stato riconosciuto nell'evento: tutte le persone (👤), gli animali (🐾) e i veicoli (🚗) che compaiono. */
+const subjectIcon = (s) => (!s.species ? '👤' : VEHICLE_SPECIES.has(s.species) ? (VEHICLE_ICON[s.species] || '🚗') : (SPECIES_ICON[s.species] || '🐾'));
+const subjectLabel = (s) => s.name || `${t('people.unknown')} #${s.id}`;
+const whoBadge = (e) => (e.subjects || []).map((s) => badge(`${subjectIcon(s)} ${subjectLabel(s)}`));
 
 const SUBJECT_KINDS = new Set(['person', 'face', 'vehicle', 'pet']);
-const eventGroup = (e) => (e.kind === 'vehicle' ? 'vehicles' : e.kind === 'pet' ? 'pets' : 'people');
 
-/** Correzione di chi/cosa è stato riconosciuto nell'evento (solo amministratore): sceglie un altro, uno nuovo o nessuno. */
-function whoEditor(e) {
-  const btn = el('button', { type: 'button', class: 'mini' }, `✎ ${t('ev.who')}`);
-  btn.onclick = async () => {
-    btn.disabled = true;
-    let people = [];
-    try { people = await api('GET', '/api/persons'); } catch (err) { toast(errorText(err), { kind: 'err' }); btn.disabled = false; return; }
-    const current = e.kind === 'vehicle' ? e.vehicleId : e.personId;
-    const sel = el('select', { class: 'mini' }, new Option(t('ev.whoPick'), ''));
-    for (const p of people.filter((x) => groupOf(x) === eventGroup(e) && x.id !== current)) sel.add(new Option(p.name || `${t('people.unknown')} #${p.id}`, p.id));
-    sel.add(new Option(t('ev.whoNew'), 'new'));
-    if (current) sel.add(new Option(t('ev.whoNone'), 'none'));
-    sel.onchange = async () => {
-      if (!sel.value) return;
-      if (sel.value === 'none' && !confirm(t('ev.whoNoneConfirm'))) { sel.value = ''; return; }
-      try {
-        const upd = await api('POST', `/api/events/${e.id}/subject`, { personId: sel.value === 'none' ? null : sel.value === 'new' ? 'new' : Number(sel.value) });
-        const i = results.findIndex((x) => x.id === e.id);
-        if (i >= 0) results[i] = upd;
-        renderResults();
-        showDetail(upd);
-      } catch (err) { toast(errorText(err), { kind: 'err' }); }
-    };
-    btn.replaceWith(sel);
-    sel.focus();
+/**
+ * Correzione di chi/cosa è stato riconosciuto nell'evento (solo amministratore). Un video può mostrare più persone,
+ * animali o veicoli: ognuno si può cambiare (✎) o togliere (✕), e se ne può aggiungere un altro (＋).
+ */
+function subjectsEditor(e) {
+  const box = el('div', { class: 'subj-edit' });
+  const send = async (body) => {
+    try {
+      const upd = await api('POST', `/api/events/${e.id}/subject`, body);
+      const i = results.findIndex((x) => x.id === e.id);
+      if (i >= 0) results[i] = upd;
+      renderResults();
+      showDetail(upd);
+    } catch (err) { toast(errorText(err), { kind: 'err' }); }
   };
-  return btn;
+  const persons = async () => { try { return await api('GET', '/api/persons'); } catch (err) { toast(errorText(err), { kind: 'err' }); return null; } };
+  const inEvent = new Set((e.subjects || []).map((s) => s.id));
+  for (const s of e.subjects || []) {
+    const change = el('button', { type: 'button', class: 'mini', title: t('ev.who') }, '✎');
+    change.onclick = async () => {
+      change.disabled = true;
+      const all = await persons();
+      if (!all) { change.disabled = false; return; }
+      const sel = el('select', { class: 'mini' }, new Option(t('ev.whoPick'), ''));
+      for (const p of all.filter((x) => groupOf(x) === groupOf(s) && !inEvent.has(x.id))) sel.add(new Option(subjectLabel(p), p.id));
+      sel.add(new Option(t('ev.whoNew'), 'new'));
+      sel.onchange = () => { if (sel.value) send({ action: 'change', from: s.id, to: sel.value === 'new' ? 'new' : Number(sel.value) }); };
+      change.replaceWith(sel);
+      sel.focus();
+    };
+    const remove = el('button', {
+      type: 'button', class: 'mini danger', title: t('people.sampleRemove'),
+      onclick: () => { if (confirm(t('ev.whoNoneConfirm'))) send({ action: 'remove', from: s.id }); },
+    }, '✕');
+    box.append(el('span', { class: 'subj-row' }, el('span', { class: 'badge' }, `${subjectIcon(s)} ${subjectLabel(s)}`), change, remove));
+  }
+  if (SUBJECT_KINDS.has(e.kind) || (e.subjects || []).length) {
+    const add = el('button', { type: 'button', class: 'mini' }, `＋ ${t('ev.whoAdd')}`);
+    add.onclick = async () => {
+      add.disabled = true;
+      const all = await persons();
+      if (!all) { add.disabled = false; return; }
+      const sel = el('select', { class: 'mini' }, new Option(t('ev.whoPick'), ''));
+      for (const [g, label] of [['people', 'ev.tabPeople'], ['pets', 'ev.tabPets'], ['vehicles', 'ev.tabVehicles']]) {
+        const group = el('optgroup', { label: t(label) });
+        for (const p of all.filter((x) => groupOf(x) === g && !inEvent.has(x.id))) group.append(new Option(subjectLabel(p), `${g}:${p.id}`));
+        group.append(new Option({ people: t('ev.whoNewPerson'), pets: t('ev.whoNewPet'), vehicles: t('ev.whoNewVehicle') }[g], `${g}:new`));
+        sel.append(group);
+      }
+      sel.onchange = () => {
+        if (!sel.value) return;
+        const [group, id] = sel.value.split(':');
+        send({ action: 'add', group, to: id === 'new' ? 'new' : Number(id) });
+      };
+      add.replaceWith(sel);
+      sel.focus();
+    };
+    box.append(add);
+  }
+  return box;
 }
 
 function card(e) {
@@ -364,7 +395,8 @@ function showDetail(e) {
     el('h3', {}, e.camName), el('p', {}, fmtDate(e.ts, { dateStyle: 'full', timeStyle: 'medium' })),
     el('div', { class: 'tags' }, badge(t(`kind.${e.kind}`), `k-${e.kind}`),
       e.vehicleType && badge(t(`vtype.${e.vehicleType}`)), e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
-      e.plate && badge(`${t('ev.plate')} ${e.plate}`), whoBadge(e), isAdmin() && SUBJECT_KINDS.has(e.kind) && whoEditor(e)),
+      e.plate && badge(`${t('ev.plate')} ${e.plate}`), isAdmin() ? null : whoBadge(e)),
+    isAdmin() ? subjectsEditor(e) : null,
     e.clip && e.snapshot ? el('a', { href: `/media/${e.snapshot}`, target: '_blank' }, '🖼') : null,
     e.clip ? el('a', { class: 'dl', href: `/media/${e.clip}`, download: e.clip.split('/').pop() }, `⬇ ${t('ev.downloadOrig')}`) : null,
     el('div', { class: 'row' },
