@@ -597,10 +597,24 @@ async function handleApi(req, res, url) {
   if (parts[1] === 'discovery') {
     needAdmin();
     if (!parts[2] && req.method === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      // Telecamere Reolink collegate a un hub/NVR: si chiede all'hub l'elenco dei canali con le credenziali di una
+      // telecamera già aggiunta sullo stesso hub, oppure con quelle scritte nel modulo (hub non ancora aggiunto).
+      const reolinkCams = cameras.filter((c) => c.brand === 'reolink' && c.params.host);
+      const hubs = [];
+      const seenHosts = new Set();
+      for (const c of reolinkCams) if (!seenHosts.has(c.params.host)) { seenHosts.add(c.params.host); hubs.push({ cam: c, id: c.id }); }
+      const typed = body?.reolink;
+      if (typed && /^[A-Za-z0-9._-]+$/.test(String(typed.host || '')) && typed.password && !seenHosts.has(typed.host)) {
+        hubs.push({ cam: { id: null, params: { host: String(typed.host), username: String(typed.username || 'admin'), password: String(typed.password) } }, id: null });
+      }
       const id = discovery.start({
         known: discovery.knownHosts(cameras, eufy.hostOf),
         accountSerials: new Map(eufy.accountDevices().filter((d) => d.did).map((d) => [d.did, d.serial])),
         knownSerials: new Set(cameras.filter((c) => c.brand === 'eufyp2p').map((c) => c.params.serial)),
+        hubs,
+        knownChannels: new Set(reolinkCams.map((c) => `${c.params.host}|${Number(c.params.channel) || 1}`)),
+        listChannels: reolink.pairedChannels,
       });
       return json(res, 200, { id });
     }
@@ -789,7 +803,14 @@ async function handleApi(req, res, url) {
     }
     if (!id && req.method === 'POST') {
       needAdmin();
-      const cam = cameraFromInput(await readBody(req));
+      const input = await readBody(req);
+      // Canale di un hub Reolink trovato dalla ricerca: utente e password sono quelli di una telecamera già aggiunta
+      // sullo stesso hub (non passano dal browser).
+      const src = input.copyCredentialsFrom ? byId(String(input.copyCredentialsFrom)) : null;
+      if (src && src.brand === 'reolink' && input.brand === 'reolink' && src.params.host === input.params?.host) {
+        input.params = { ...input.params, username: input.params.username || src.params.username, password: input.params.password || src.params.password };
+      }
+      const cam = cameraFromInput(input);
       cameras.push(cam);
       saveCameras();
       await restartGo2rtc();

@@ -538,6 +538,8 @@ function openDialog(cam = null, preset = null) {
 }
 
 // ---------- ricerca automatica di telecamere nella rete ----------
+// L'avviso sugli hub serve solo per le Reolink.
+const updateScanHint = () => { const h = document.querySelector('.scan-hint'); if (h) h.hidden = form.elements.brand.value !== 'reolink'; };
 let scanId = null;
 let scanTimer = null;
 function stopScan() {
@@ -548,6 +550,7 @@ function stopScan() {
 }
 function resetScan() {
   stopScan();
+  delete form.dataset.copyFrom;
   $('#scan-progress').hidden = true;
   $('#scan-status').hidden = true;
   $('#scan-results').replaceChildren();
@@ -555,15 +558,25 @@ function resetScan() {
 }
 
 /** Compila il modulo con una telecamera trovata (marca, indirizzo, nome; per le Eufy anche il numero di serie). */
+let scanFilling = false;
 function useFound(d) {
+  delete form.dataset.copyFrom; // la copia delle credenziali vale solo per il canale scelto adesso
+  scanFilling = true; // il cambio di marca fatto da qui non deve scartare la copia delle credenziali
   const brand = state.brands.some((b) => b.id === d.brand) ? d.brand : 'custom';
   form.elements.brand.value = brand;
   form.elements.brand.dispatchEvent(new Event('change'));
+  scanFilling = false;
   if (!form.elements.name.value) form.elements.name.value = d.name || d.detail || d.host;
   const set = (key, value) => { const input = form.elements[`p_${key}`]; if (input && value) input.value = value; };
   if (brand === 'custom') set('mainUrl', `rtsp://${d.host}:${d.rtspPort || 554}/`);
   else set('host', d.host);
   if (brand === 'eufyp2p') { set('serial', d.serial); form.elements.battery.checked = !!d.battery; }
+  if (d.hub) { // canale di un hub Reolink: stesso utente e password delle telecamere già aggiunte sull'hub (restano sul server)
+    set('channel', d.channel);
+    set('username', d.username);
+    const pass = form.elements.p_password;
+    if (d.copyFrom && pass) { form.dataset.copyFrom = d.copyFrom; pass.placeholder = t('scan.samePassword'); }
+  }
   const next = [...form.querySelectorAll('#fields input')].find((i) => i.required && !i.value) || form.querySelector('#fields input');
   next?.focus();
 }
@@ -571,7 +584,9 @@ function useFound(d) {
 function showFound(list) {
   const box = $('#scan-results');
   box.replaceChildren(...list.map((d) => el('div', { class: 'scan-row' },
-    el('div', {}, el('b', {}, d.host), el('span', { class: 'note' }, ` ${t(`brand.${d.brand}`, null, d.brand)}${d.detail ? ` · ${d.detail}` : ''}`)),
+    el('div', {},
+      el('b', {}, d.hub ? t('scan.hubRow', { host: d.host, n: d.channel }) : d.host),
+      el('span', { class: 'note' }, ` ${d.hub && d.name ? `${d.name} · ` : ''}${t(`brand.${d.brand}`, null, d.brand)}${d.detail ? ` · ${d.detail}` : ''}${d.hub && !d.online ? ` · ${t('scan.offline')}` : ''}`)),
     el('button', { type: 'button', class: 'primary', onclick: () => useFound(d) }, t('scan.use')))));
 }
 
@@ -594,7 +609,10 @@ async function startScan() {
     status.textContent = text;
   };
   try {
-    scanId = (await api('POST', '/api/discovery')).id;
+    // Hub Reolink non ancora aggiunto: se nel modulo ci sono indirizzo e password, la ricerca elenca anche i suoi canali.
+    const typed = form.elements.brand.value === 'reolink' && form.elements.p_host?.value && form.elements.p_password?.value
+      ? { reolink: { host: form.elements.p_host.value.trim(), username: form.elements.p_username?.value || 'admin', password: form.elements.p_password.value } } : {};
+    scanId = (await api('POST', '/api/discovery', typed)).id;
   } catch (err) { finish(errorText(err), true); return; }
   const id = scanId;
   scanTimer = setInterval(async () => {
@@ -618,6 +636,8 @@ dlg.addEventListener('close', stopScan);
 
 form.elements.brand.addEventListener('change', () => {
   const brand = form.elements.brand.value;
+  updateScanHint();
+  if (!scanFilling) delete form.dataset.copyFrom;
   renderFields(brand);
   // Le Eufy locali sono spesso a batteria: niente connessione permanente in automatico.
   form.elements.preload.checked = brand !== 'eufyp2p';
@@ -637,6 +657,7 @@ form.addEventListener('submit', async (e) => {
     saveEvents: form.elements.saveEvents.checked,
     params,
   };
+  if (!editing && form.dataset.copyFrom && !params.password) body.copyCredentialsFrom = form.dataset.copyFrom;
   $('#btn-save').disabled = true;
   try {
     const saved = editing ? await api('PUT', `/api/cameras/${editing.id}`, body) : await api('POST', '/api/cameras', body);

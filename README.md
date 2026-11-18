@@ -7,7 +7,7 @@ A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (loc
 ## Features
 
 - **Live view** of many cameras (WebRTC through [go2rtc](https://github.com/AlexxIT/go2rtc)), responsive UI for phone and desktop, installable as a home-screen app, 5 languages (it, en, fr, de, es).
-- **Automatic camera search** in the *New camera* dialog: a progress bar while Argo looks on the local network (ONVIF discovery, Eufy broadcast, port scan with Reolink/Hikvision/Dahua/RTSP recognition) and lists only the cameras that are not added yet, ready to fill in the form. It scans the server's own private network (up to a /22).
+- **Automatic camera search** in the *New camera* dialog: a progress bar while Argo looks on the local network (ONVIF discovery, Eufy broadcast, port scan with Reolink/Hikvision/Dahua/RTSP recognition) and lists only the cameras that are not added yet, ready to fill in the form. Cameras paired to a **Reolink Home Hub / NVR** have no address of their own: the search also asks the hub for its channels (using the credentials of a camera already added on that hub, or those typed in the form for a new hub) and lists the channels not added yet; the password never reaches the browser. It scans the server's own private network (up to a /22).
 - **Brands**: Reolink (direct or through a Home Hub, including battery cameras), Eufy over local P2P (no RTSP needed, battery cameras can be woken on request where the model allows it), ONVIF, generic RTSP/HTTP.
 - **Events** (motion, person, vehicle, pet, package, doorbell, fire, flood) with snapshot, clip and a lightweight H.264 preview for playback; the original clip stays at full quality for download.
 - **Smart search** in natural language ("white cars last Tuesday evening").
