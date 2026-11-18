@@ -4,8 +4,6 @@
 
 A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (local P2P, no cloud video), ONVIF and plain RTSP cameras on one screen, with events, alerts, smart search and on-device recognition of people, pets and vehicles. Everything stays on your network.
 
-> The internal service/package is still called `cam-app` (folders, systemd unit `cam-app`, user `camapp`).
-
 ## Features
 
 - **Live view** of many cameras (WebRTC through [go2rtc](https://github.com/AlexxIT/go2rtc)), responsive UI for phone and desktop, installable as a home-screen app, 5 languages (it, en, fr, de, es).
