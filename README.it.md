@@ -4,8 +4,6 @@
 
 Visualizzatore **multi-telecamera locale** per PC e telefono. Reolink, Eufy (P2P locale, video senza cloud), ONVIF e RTSP in un'unica schermata, con eventi, allarmi, ricerca intelligente e riconoscimento di persone, animali e veicoli. Tutto resta nella tua rete.
 
-> Il servizio/pacchetto interno si chiama ancora `cam-app` (cartelle, unità systemd `cam-app`, utente `camapp`).
-
 ## Funzioni
 
 - **Video dal vivo** di molte telecamere (WebRTC tramite [go2rtc](https://github.com/AlexxIT/go2rtc)), interfaccia per telefono e PC, installabile nella schermata Home, 5 lingue (it, en, fr, de, es).
