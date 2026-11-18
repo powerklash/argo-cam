@@ -19,6 +19,34 @@ Visualizzatore **multi-telecamera locale** per PC e telefono. Reolink, Eufy (P2P
 - **Utenti e permessi**: amministratore e livelli *Guarda* / *Controlla* per telecamera, password scrypt, blocco dopo tentativi falliti, protezione CSRF.
 - Popup del campanello con audio bidirezionale, icone e stato Home Assistant (token solo sul server), icone batteria, pagina per scaricare il certificato sul telefono.
 
+## Immagini
+
+> Solo dati di esempio: telecamere, persone, animali e veicoli qui sotto sono fittizi (illustrazioni, interfaccia in inglese).
+
+**Vista live** di tutte le telecamere in un'unica schermata:
+
+![Vista live](docs/screenshots/grid.png)
+
+**Eventi** con ricerca e il sottile riquadro rosso che segue il soggetto nel filmato (si può disattivare):
+
+![Eventi e riquadro rosso](docs/screenshots/event-tracking.png)
+
+**Persone, animali e veicoli** hanno ciascuno la propria scheda dove dare un nome. Quando uno nuovo somiglia a uno già noto, Argo suggerisce di unirli:
+
+![Persone con suggerimento di unione](docs/screenshots/people.png)
+
+![Veicoli con suggerimento di unione](docs/screenshots/vehicles.png)
+
+![Animali](docs/screenshots/pets.png)
+
+**Allerta incendio e allagamento**: compaiono sirena e banner quando una telecamera vede fiamme o acqua sul pavimento.
+
+![Banner allerta incendio](docs/screenshots/alarm.png)
+
+Si sceglie per ogni telecamera cosa sorvegliare (controlli approssimativi, non sostituiscono un rilevatore di fumo o di allagamento):
+
+![Impostazioni incendio e allagamento](docs/screenshots/settings-alerts.png)
+
 ## Avvio rapido (Windows o Linux, per prove)
 
 Servono Node.js 22+, ffmpeg nel `PATH` e il programma [go2rtc](https://github.com/AlexxIT/go2rtc/releases) in `bin/` (`go2rtc.exe` / `go2rtc`).

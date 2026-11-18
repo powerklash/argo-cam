@@ -19,6 +19,34 @@ A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (loc
 - **Users and permissions**: admin and per-camera *watch* / *control* levels, scrypt passwords, brute-force lockout, CSRF protection.
 - Doorbell popup with two-way audio, Home Assistant icons/state (read-only token stored server side), battery level icons, certificate download page for phones.
 
+## Screenshots
+
+> Demo data only: the cameras, people, pets and vehicles below are fictional, illustrated placeholders.
+
+**Live view** of all cameras on one screen:
+
+![Live view](docs/screenshots/grid.png)
+
+**Events** with search, and the thin red box that follows the subject in the clip (it can be switched off):
+
+![Events and red tracking box](docs/screenshots/event-tracking.png)
+
+**People, pets and vehicles** each get their own tab, where you name them. When a new one looks like a known subject, Argo suggests merging them:
+
+![People with a merge suggestion](docs/screenshots/people.png)
+
+![Vehicles with a merge suggestion](docs/screenshots/vehicles.png)
+
+![Pets](docs/screenshots/pets.png)
+
+**Fire and flood alerts**: a siren and a banner appear when a camera sees flames or water on the floor.
+
+![Fire alert banner](docs/screenshots/alarm.png)
+
+Choose per camera what to watch (heuristic checks, not a replacement for a smoke or flood detector):
+
+![Fire and flood settings](docs/screenshots/settings-alerts.png)
+
 ## Quick start (Windows or Linux, for testing)
 
 Requirements: Node.js 22+, ffmpeg in `PATH`, and the [go2rtc](https://github.com/AlexxIT/go2rtc/releases) binary in `bin/` (`go2rtc.exe` / `go2rtc`).
