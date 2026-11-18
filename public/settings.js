@@ -69,40 +69,140 @@ async function audioSection() {
 }
 
 // ---------- Eufy ----------
+const EUFY_ERRORS = ['login_failed', 'network', 'credentials'];
+const eufyErrorText = (code) => (code === 'unavailable' ? t('set.eufyUnavailable') : EUFY_ERRORS.includes(code) ? t('set.eufyErr.' + code) : t('set.eufyErr'));
+const guessCountry = () => {
+  const region = (navigator.languages || [navigator.language]).map((l) => /-([A-Za-z]{2})$/.exec(l || '')?.[1]).find(Boolean);
+  return (region || { it: 'IT', fr: 'FR', de: 'DE', es: 'ES', en: 'GB' }[getLang()] || 'IT').toUpperCase();
+};
+
+/** Collegamento dell'account Eufy (cloud): serve per aggiungere le telecamere e per svegliare quelle a batteria. */
+function eufyAccountBox(onChange) {
+  const box = el('div', { class: 'eufy-account' });
+  let last = {}; // paese ed email dell'ultimo tentativo (per non riscriverli dopo un errore)
+  const render = async () => {
+    let st;
+    try { st = await api('GET', '/api/eufy/cloud'); } catch (err) { box.replaceChildren(el('p', { class: 'note err' }, errorText(err))); return; }
+    const connected = st.data && (st.session || Object.values(st.stations).some((s) => s.keyMinutesLeft > 0));
+    const mins = Math.max(0, ...Object.values(st.stations).map((s) => s.keyMinutesLeft));
+    const info = !st.available
+      ? el('p', { class: 'note err' }, t('set.eufyUnavailable'))
+      : connected
+        ? el('p', { class: 'note ok' }, st.session
+          ? t('set.eufyOn', { date: st.tokenExpires ? new Date(st.tokenExpires).toLocaleDateString(getLang()) : '—' })
+          : t('set.eufyOnKey', { min: mins }))
+        : el('p', { class: 'note' }, t('set.eufyOff'));
+    box.replaceChildren(info);
+    if (!st.available) return;
+    const show = el('button', { type: 'button', class: connected ? '' : 'primary', onclick: () => form() }, connected ? t('set.eufyReconnect') : t('set.eufyConnect'));
+    const actions = el('div', { class: 'srow-inline' }, show);
+    if (st.data) {
+      actions.append(el('button', {
+        type: 'button',
+        class: 'danger',
+        onclick: async () => {
+          if (!confirm(t('set.eufyDisconnectAsk'))) return;
+          try { await api('DELETE', '/api/eufy/cloud'); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+          render();
+          onChange();
+        },
+      }, t('set.eufyDisconnect')));
+    }
+    box.append(actions);
+  };
+
+  // Passi dell'accesso: credenziali -> (captcha | codice) -> fine. Le credenziali non si conservano nella pagina.
+  function form(errorCode) {
+    const country = el('input', { maxlength: 2, value: last.country || guessCountry(), autocomplete: 'off', style: 'text-transform:uppercase' });
+    const email = el('input', { type: 'email', value: last.email || '', autocomplete: 'off', autocapitalize: 'none', spellcheck: false });
+    const password = el('input', { type: 'password', autocomplete: 'new-password' });
+    const keep = check(t('set.eufyKeep'), true);
+    const msg = el('p', { class: errorCode ? 'note err' : 'note' }, errorCode ? eufyErrorText(errorCode) : t('set.eufyPrivacy'));
+    const go = el('button', { type: 'submit', class: 'primary' }, t('set.eufyConnect'));
+    const cancel = el('button', { type: 'button', onclick: () => { api('POST', '/api/eufy/login', { action: 'cancel' }).catch(() => {}); render(); } }, t('btn.cancel'));
+    const f = el('form', { class: 'eufy-form', autocomplete: 'off' },
+      row(t('set.eufyCountry'), country), row(t('set.eufyEmail'), email), row(t('set.eufyPassword'), password), keep.node, msg,
+      el('div', { class: 'srow-inline' }, go, cancel));
+    box.replaceChildren(f);
+
+    const busy = (on) => { for (const x of f.querySelectorAll('input, button[type=submit]')) x.disabled = on; if (on) msg.textContent = t('set.eufyBusy'); };
+    const handle = (r) => {
+      busy(false);
+      if (r.status === 'done') {
+        toast(t('set.eufyDone', { n: r.stations.length }));
+        render();
+        onChange();
+      } else if (r.status === 'captcha' || r.status === 'verify') {
+        const code = el('input', { autocomplete: 'off', autocapitalize: 'none', spellcheck: false, maxlength: 16 });
+        const send = el('button', { type: 'submit', class: 'primary' }, t('set.eufySend'));
+        const step = el('form', { class: 'eufy-form' },
+          el('p', { class: 'note' }, r.status === 'captcha' ? t('set.eufyCaptcha') : t('set.eufyVerify')),
+          r.status === 'captcha' ? el('img', { class: 'eufy-captcha', src: r.image, alt: '' }) : null,
+          code, el('div', { class: 'srow-inline' }, send, cancel));
+        step.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          send.disabled = true;
+          try { handle(await api('POST', '/api/eufy/login', { action: r.status, code: code.value })); } catch (err) { fail(err); }
+        });
+        box.replaceChildren(step);
+        code.focus();
+      } else if (f.isConnected) {
+        msg.className = 'note err';
+        msg.textContent = eufyErrorText(r.code);
+      } else {
+        form(r.code); // l'errore è arrivato dopo captcha/codice: si torna al modulo con il messaggio
+      }
+    };
+    const fail = (err) => { busy(false); msg.className = 'note err'; msg.textContent = errorText(err); };
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      last = { country: country.value, email: email.value }; // la password non si conserva mai
+      busy(true);
+      try {
+        handle(await api('POST', '/api/eufy/login', { action: 'login', country: country.value, email: email.value, password: password.value, keepSession: keep.input.checked }));
+      } catch (err) { fail(err); }
+    });
+    email.focus();
+  }
+  render();
+  return box;
+}
+
 function eufySection() {
   const list = el('div', { class: 'eufy-list' });
+  const showList = async (scan) => {
+    list.replaceChildren(el('p', { class: 'note' }, scan ? t('set.eufyScanning') : ''));
+    try {
+      const r = await api('GET', `/api/eufy/discover${scan ? '' : '?scan=0'}`);
+      list.replaceChildren();
+      if (!r.configured) list.append(el('p', { class: 'note err' }, t('set.eufyNotConfigured')));
+      else if (r.devices.length) list.append(el('p', { class: 'note' }, t('set.eufyList')));
+      for (const d of r.devices) {
+        const info = d.camId
+          ? el('span', { class: 'note' }, t('set.eufyAdded', { name: d.camName }))
+          : el('button', {
+            type: 'button',
+            onclick: () => {
+              $('#settings').close();
+              app.openDialog(null, { brand: 'eufyp2p', name: d.name || d.serial.slice(0, 5), battery: /^T81/.test(d.serial), params: { serial: d.serial, host: d.ip || '' } });
+            },
+          }, t('set.eufyAdd'));
+        list.append(el('div', { class: 'eufy-row' },
+          el('span', {}, el('code', {}, d.serial), d.name ? el('span', { class: 'note' }, ` ${d.name}`) : null),
+          el('span', { class: d.online ? 'ok' : 'note' }, scan ? (d.online ? `${d.ip} · ${t('set.eufyOnline')}` : t('set.eufyAsleep')) : ''),
+          info));
+      }
+      if (r.unknown.length) list.append(el('p', { class: 'note' }, t('set.eufyUnknown', { ips: r.unknown.map((u) => u.ip).join(', ') })));
+    } catch (err) {
+      list.replaceChildren(el('p', { class: 'note err' }, errorText(err)));
+    }
+  };
   const btn = el('button', {
     type: 'button',
-    onclick: async () => {
-      btn.disabled = true;
-      list.replaceChildren(el('p', { class: 'note' }, t('set.eufyScanning')));
-      try {
-        const r = await api('GET', '/api/eufy/discover');
-        list.replaceChildren();
-        if (!r.configured) list.append(el('p', { class: 'note err' }, t('set.eufyNotConfigured')));
-        for (const d of r.devices) {
-          const info = d.camId
-            ? el('span', { class: 'note' }, t('set.eufyAdded', { name: d.camName }))
-            : el('button', {
-              type: 'button',
-              onclick: () => {
-                $('#settings').close();
-                app.openDialog(null, { brand: 'eufyp2p', name: d.serial.slice(0, 5), battery: /^T81/.test(d.serial), params: { serial: d.serial, host: d.ip || '' } });
-              },
-            }, t('set.eufyAdd'));
-          list.append(el('div', { class: 'eufy-row' },
-            el('code', {}, d.serial),
-            el('span', { class: d.online ? 'ok' : 'note' }, d.online ? `${d.ip} · ${t('set.eufyOnline')}` : t('set.eufyAsleep')),
-            info));
-        }
-        if (r.unknown.length) list.append(el('p', { class: 'note' }, t('set.eufyUnknown', { ips: r.unknown.map((u) => u.ip).join(', ') })));
-      } catch (err) {
-        list.replaceChildren(el('p', { class: 'note err' }, errorText(err)));
-      }
-      btn.disabled = false;
-    },
+    onclick: async () => { btn.disabled = true; await showList(true); btn.disabled = false; },
   }, t('set.eufyScan'));
-  return section(t('set.eufy'), btn, list);
+  showList(false);
+  return section(t('set.eufy'), el('h4', { class: 'eufy-title' }, t('set.eufyAccount')), eufyAccountBox(() => showList(false)), btn, list);
 }
 
 // ---------- Home Assistant ----------

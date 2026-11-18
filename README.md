@@ -91,7 +91,7 @@ cd tools/eufy-login && npm install
 EUFY_CIPHERS="<serial>=<cipherId>,..." DATA_DIR=/var/lib/cam-app node login.mjs
 ```
 
-You type the credentials in your terminal; they are not stored. Use `node tools/eufy-discover.js` to find cameras and their cipher IDs on the LAN. Battery cameras (SoloCam) sleep: the app sends discovery packets until they answer and connects immediately. Some models (for example the S340) do not answer local packets while asleep, so the app can also **wake them through the Eufy P2P servers, like the official app does** (only the wake request goes through the cloud; video stays local). To enable it, run once more:
+You type the credentials in your terminal; they are not stored. Use `node tools/eufy-discover.js` to find cameras and their cipher IDs on the LAN. Battery cameras (SoloCam) sleep: the app sends discovery packets until they answer and connects immediately. Some models (for example the S340) do not answer local packets while asleep, so the app can also **wake them through the Eufy P2P servers, like the official app does** (only the wake request goes through the cloud; video stays local). The easiest way is **Settings → Eufy cameras → Connect account** in the app (admin only): enter your Eufy email and password (and the captcha/code if Eufy asks). They are sent only to the Eufy servers and are not stored; the cameras of the account are then listed with an **Add** button. This needs the login tool installed on the server (`install.sh --with-eufy-login`). The same can be done from a terminal:
 
 ```bash
 cd tools/eufy-login && DATA_DIR=/var/lib/cam-app node login.mjs --wake-only

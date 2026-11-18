@@ -15,6 +15,8 @@ import crypto, { randomBytes, createHash } from 'node:crypto';
 import * as reolink from './lib/reolink.js';
 import * as eufy from './lib/eufy.js';
 import * as eufySettings from './lib/eufy-settings.js';
+import * as eufyCloud from './lib/eufy-cloud.js';
+import * as eufyLogin from './lib/eufy-login.js';
 import * as events from './lib/events.js';
 import * as db from './lib/db.js';
 import * as search from './lib/search.js';
@@ -548,10 +550,20 @@ async function handleApi(req, res, url) {
     const devices = eufy.accountDevices().map((d) => {
       const hit = found.find((f) => f.serial === d.serial);
       const cam = known.find((c) => c.params.serial === d.serial);
-      return { serial: d.serial, ip: hit?.ip || null, online: !!hit, camId: cam?.id || null, camName: cam?.name || null };
+      return { serial: d.serial, name: d.name, ip: hit?.ip || null, online: !!hit, camId: cam?.id || null, camName: cam?.name || null };
     });
     const unknown = found.filter((f) => !f.serial).map((f) => ({ ip: f.ip }));
     return json(res, 200, { configured: eufy.isConfigured(), devices, unknown });
+  }
+  // ----- Eufy: accesso al cloud dalle impostazioni (account, sveglia delle batterie) -----
+  if (parts[1] === 'eufy' && parts[2] === 'cloud') {
+    needAdmin();
+    if (req.method === 'GET') return json(res, 200, { available: eufyLogin.available(), configured: eufy.isConfigured(), ...eufyCloud.status() });
+    if (req.method === 'DELETE') { eufyCloud.disconnect(); return json(res, 200, { ok: true }); }
+  }
+  if (parts[1] === 'eufy' && parts[2] === 'login' && req.method === 'POST') {
+    needAdmin();
+    return json(res, 200, await eufyLogin.step(await readBody(req)));
   }
 
   // ----- riconoscimento (volti e mezzi) e persone: solo amministratore -----

@@ -91,7 +91,7 @@ cd tools/eufy-login && npm install
 EUFY_CIPHERS="<seriale>=<cipherId>,..." DATA_DIR=/var/lib/cam-app node login.mjs
 ```
 
-Le credenziali le digiti nel terminale e non vengono salvate. `node tools/eufy-discover.js` trova le telecamere e i cipherID in rete. Le SoloCam a batteria dormono: l'app invia pacchetti di ricerca finché rispondono e si collega subito; alcuni modelli (ad esempio la S340) non rispondono ai pacchetti locali finché dormono, quindi l'app può anche **svegliarli tramite i server P2P di Eufy, come fa l'app ufficiale** (dal cloud passa solo la richiesta di sveglia; il video resta locale). Per attivarlo, esegui ancora una volta:
+Le credenziali le digiti nel terminale e non vengono salvate. `node tools/eufy-discover.js` trova le telecamere e i cipherID in rete. Le SoloCam a batteria dormono: l'app invia pacchetti di ricerca finché rispondono e si collega subito; alcuni modelli (ad esempio la S340) non rispondono ai pacchetti locali finché dormono, quindi l'app può anche **svegliarli tramite i server P2P di Eufy, come fa l'app ufficiale** (dal cloud passa solo la richiesta di sveglia; il video resta locale). Il modo più semplice è **Impostazioni → Telecamere Eufy → Collega account** nell'app (solo amministratore): inserisci email e password Eufy (e captcha/codice se li chiede). Vanno solo ai server Eufy e non vengono salvate; le telecamere dell'account compaiono poi in elenco con il pulsante **Aggiungi**. Serve lo strumento di accesso installato sul server (`install.sh --with-eufy-login`). Lo stesso si può fare da terminale:
 
 ```bash
 cd tools/eufy-login && DATA_DIR=/var/lib/cam-app node login.mjs --wake-only
