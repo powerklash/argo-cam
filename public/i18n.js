@@ -47,6 +47,10 @@ add({
   'tile.options': ['Opzioni telecamera', 'Camera options', 'Options de la caméra', 'Kameraoptionen', 'Opciones de la cámara'],
   'tile.edit': ['Modifica', 'Edit', 'Modifier', 'Bearbeiten', 'Editar'],
   'tile.pause': ['Metti in pausa', 'Pause', 'Mettre en pause', 'Pausieren', 'Pausar'],
+  'tile.offline': ['OFFLINE', 'OFFLINE', 'HORS LIGNE', 'OFFLINE', 'SIN CONEXIÓN'],
+  'tile.asleep': ['A RIPOSO', 'ASLEEP', 'EN VEILLE', 'SCHLÄFT', 'EN REPOSO'],
+  'tile.lastImage': ['ultima immagine {d}', 'last image {d}', 'dernière image {d}', 'letztes Bild {d}', 'última imagen {d}'],
+  'tile.noImage': ['nessuna immagine salvata', 'no image saved', 'aucune image enregistrée', 'kein Bild gespeichert', 'ninguna imagen guardada'],
   'tile.connecting': ['Connessione…', 'Connecting…', 'Connexion…', 'Verbindung…', 'Conectando…'],
   'tile.error': ['errore', 'error', 'erreur', 'Fehler', 'error'],
   'tile.authFailed': [

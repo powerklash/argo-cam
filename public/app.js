@@ -167,6 +167,64 @@ document.addEventListener('camstatus', (e) => {
   if (tile?.dataset.paused) renderCover(tile);
 });
 
+// ---------- ultima immagine e riquadro "offline" ----------
+// Il browser che guarda una telecamera in diretta ne manda al server un fotogramma circa al minuto. Quando la
+// telecamera è offline, spenta o a riposo si mostra quell'ultima immagine dipinta di verde (con la scritta in basso a destra).
+const OFFLINE_AFTER_MS = 10_000;
+
+function captureFrame(tile) {
+  const v = tile.querySelector('cam-stream video');
+  if (!v || !v.videoWidth || v.readyState < 2) return;
+  const w = Math.min(640, v.videoWidth), h = Math.round((w * v.videoHeight) / v.videoWidth);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  try { c.getContext('2d').drawImage(v, 0, 0, w, h); } catch { return; }
+  c.toBlob((b) => {
+    if (b) fetch(`/api/cameras/${tile.dataset.id}/lastframe`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: b }).catch(() => {});
+  }, 'image/jpeg', 0.7);
+}
+
+async function setOffline(tile, off, asleep) {
+  let box = $('.offline', tile);
+  if (!off) {
+    if (box) { box.remove(); tile.classList.remove('is-offline'); delete tile.dataset.offFrame; }
+    return;
+  }
+  if (!box) {
+    box = el('div', { class: 'offline' }, el('img', { alt: '', hidden: true }), el('div', { class: 'off-tag' }, el('b'), el('span')));
+    tile.prepend(box);
+    tile.classList.add('is-offline');
+  }
+  $('b', box).textContent = t(asleep ? 'tile.asleep' : 'tile.offline');
+  if (tile.dataset.offFrame) return; // l'immagine si carica una volta per episodio
+  tile.dataset.offFrame = '1';
+  try {
+    const r = await fetch(`/api/cameras/${tile.dataset.id}/lastframe`, { cache: 'no-cache' });
+    if (!r.ok) throw new Error('nessuna immagine');
+    const img = $('img', box);
+    img.src = URL.createObjectURL(await r.blob());
+    img.hidden = false;
+    const taken = Number(r.headers.get('X-Taken'));
+    $('span', box).textContent = taken ? t('tile.lastImage', { d: fmtDate(taken, { dateStyle: 'short', timeStyle: 'short' }) }) : '';
+  } catch {
+    $('span', box).textContent = t('tile.noImage');
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const tile of grid.children) {
+    const live = tile.classList.contains('live');
+    if (live) {
+      tile._offSince = null;
+      if (!tile._lastUp || now - tile._lastUp > 60_000) { tile._lastUp = now; captureFrame(tile); }
+    } else if (!tile._offSince) tile._offSince = now;
+    const paused = !!tile.dataset.paused;
+    const off = !live && !tile.dataset.private && !tile.dataset.authFailed && (paused || now - tile._offSince > OFFLINE_AFTER_MS);
+    setOffline(tile, off, paused);
+  }
+}, 3000);
+
 // ---------- modalità privacy (occhio barrato) ----------
 function renderPrivacy(tile) {
   const cam = camById(tile.dataset.id);

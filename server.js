@@ -285,6 +285,21 @@ const json = (res, status, body, headers = {}) => {
   res.end(JSON.stringify(body));
 };
 
+const LASTFRAME_DIR = path.join(DATA, 'lastframe');
+
+function readRaw(req, max) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) { reject(new HttpError(413, 'Richiesta troppo grande')); req.destroy(); } else chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -851,6 +866,27 @@ async function handleApi(req, res, url) {
     const index = cameras.findIndex((c) => c.id === id);
     if (index < 0 || level(id) < 1) throw new HttpError(404, 'Telecamera non trovata');
     const cam = cameras[index];
+
+    // Ultima immagine in diretta di una telecamera: la manda il browser che la sta guardando (circa una al minuto) e si
+    // mostra, dipinta di verde, quando la telecamera è offline o spenta.
+    if (parts[3] === 'lastframe') {
+      const file = path.join(LASTFRAME_DIR, `${cam.id}.jpg`);
+      if (req.method === 'GET') {
+        let st;
+        try { st = fs.statSync(file); } catch { throw new HttpError(404, 'Non trovato'); }
+        res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': st.size, 'Cache-Control': 'no-cache', 'X-Taken': String(Math.round(st.mtimeMs)) });
+        return fs.createReadStream(file).pipe(res);
+      }
+      if (req.method === 'PUT') {
+        if (cam.privacy?.on) return json(res, 200, { skipped: true }); // con la privacy attiva non si conserva nulla
+        const buf = await readRaw(req, 400_000);
+        if (buf.length < 500 || buf[0] !== 0xff || buf[1] !== 0xd8) throw new HttpError(400, 'Immagine non valida');
+        try { if (Date.now() - fs.statSync(file).mtimeMs < 45_000) return json(res, 200, { skipped: true }); } catch { /* prima immagine */ }
+        fs.mkdirSync(LASTFRAME_DIR, { recursive: true });
+        fs.writeFileSync(file, buf);
+        return json(res, 200, { ok: true });
+      }
+    }
 
     if (parts[3] === 'wake' && req.method === 'POST') {
       // Eufy: la telecamera va svegliata dal server (può richiedere decine di secondi).

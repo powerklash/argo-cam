@@ -205,6 +205,15 @@ dialog label.check input { width: auto; margin-top: 3px; }
   gap: 10px; background: #111418; color: #c9a0a0;
 }
 .tile .priv-cover[hidden] { display: none; }
+/* Telecamera offline, spenta o a riposo: ultima immagine dipinta di verde scuro, scritta in basso a destra (al centro può esserci Play/Sveglia). */
+.tile .offline { position: absolute; inset: 0; z-index: 4; background: #0b2412; pointer-events: none; }
+.tile .offline img { display: block; width: 100%; height: 100%; object-fit: contain; filter: sepia(1) hue-rotate(50deg) saturate(2.6) brightness(.55); }
+.tile .offline img[hidden] { display: none; }
+.tile .offline .off-tag { position: absolute; right: 10px; bottom: 8px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; color: #eaffee; text-shadow: 0 1px 3px #000; }
+.tile .offline .off-tag b { font-size: 20px; letter-spacing: .08em; font-weight: 600; }
+.tile .offline .off-tag span { font-size: 12px; opacity: .9; }
+.tile.is-offline .cover { background: none; }
+.tile.is-offline .wait { display: none; }
 .tile .priv-cover svg { width: 54px; height: 54px; color: #e05a5a; }
 .tile .priv-text { font-weight: 600; color: #e6b4b4; }
 
