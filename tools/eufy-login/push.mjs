@@ -65,20 +65,21 @@ async function run() {
   try { cloud = secrets.readSecretFile(path.join(DATA, 'eufy-cloud.json'))?.data; } catch { cloud = null; }
   const fetchPic = async (m) => {
     const did = cloud?.stations?.[m.station_sn]?.did || cloud?.stations?.[m.device_sn]?.did;
-    if (!did || !m.pic_url) return null;
+    if (!did || !m.pic_url) throw new Error(did ? 'senza immagine' : 'identificativo P2P non trovato per ' + (m.station_sn || m.device_sn));
     const r = await api.request({ method: 'GET', endpoint: m.pic_url, responseType: 'buffer' }, true);
-    if (r.status !== 200) return null;
+    if (r.status !== 200) throw new Error('HTTP ' + r.status);
     const img = decodeImage(did, Buffer.from(r.data));
-    return img.length > 500 && img[0] === 0xff && img[1] === 0xd8 ? img.toString('base64') : null;
+    if (!(img.length > 500 && img[0] === 0xff && img[1] === 0xd8)) throw new Error('formato inatteso (' + img.length + ' byte, inizio ' + img.subarray(0, 4).toString('hex') + ')');
+    return img.toString('base64');
   };
 
   push.on('message', async (m) => {
     save();
-    let pic = null;
-    if (m.pic_url) { try { pic = await fetchPic(m); } catch { pic = null; } }
+    let pic = null, picErr = '';
+    if (m.pic_url) { try { pic = await fetchPic(m); } catch (e) { picErr = e.message; } }
     out({
       t: 'msg', name: m.name, title: m.title, content: m.content, type: m.type, eventType: m.event_type, msgType: m.msg_type,
-      deviceSn: m.device_sn, stationSn: m.station_sn, eventTime: m.event_time, hasPic: !!m.pic_url, pic, pushCount: m.push_count, id: m.unique_id,
+      deviceSn: m.device_sn, stationSn: m.station_sn, eventTime: m.event_time, hasPic: !!m.pic_url, pic, picErr, pushCount: m.push_count, id: m.unique_id,
       session: m.event_session, filePath: m.file_path,
     });
   });
