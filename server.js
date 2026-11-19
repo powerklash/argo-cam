@@ -654,7 +654,8 @@ async function handleApi(req, res, url) {
   // ----- riconoscimento (volti e mezzi) e persone: solo amministratore -----
   if (parts[1] === 'recognition') {
     needAdmin();
-    if (parts[2] === 'status' && req.method === 'GET') return json(res, 200, { ...(await recognition.status()), pending: recognition.queueLength() });
+    if (parts[2] === 'status' && req.method === 'GET') return json(res, 200, { ...(await recognition.status()), ...recognition.progress() });
+    if (parts[2] === 'progress' && req.method === 'GET') return json(res, 200, recognition.progress());
     if (parts[2] === 'reprocess' && req.method === 'POST') return json(res, 200, await recognition.reprocess({ again: (await readBody(req)).again === true }));
   }
   if (parts[1] === 'persons') {
@@ -737,6 +738,11 @@ async function handleApi(req, res, url) {
         if (e.archived && e.clip) archive.remove(e.clip).catch(() => {});
       }
       return json(res, 200, { deleted: n });
+    }
+    if (parts[2] === 'unseen' && req.method === 'GET') { // eventi arrivati dopo l'ultima volta che l'utente ha guardato l'elenco
+      const since = Number(url.searchParams.get('since')) || 0;
+      const allowed = cameras.filter((c) => level(c.id) > 0).map((c) => c.id);
+      return json(res, 200, { n: db.countEventsSince(since, allowed), now: Date.now() });
     }
     if (!parts[2] && req.method === 'GET') {
       const q = Object.fromEntries(url.searchParams);

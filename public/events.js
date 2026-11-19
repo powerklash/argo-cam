@@ -13,8 +13,8 @@ function connect() {
   es.addEventListener('visitor', (e) => onVisitor(JSON.parse(e.data)));
   es.addEventListener('status', (e) => document.dispatchEvent(new CustomEvent('camstatus', { detail: JSON.parse(e.data) })));
   es.addEventListener('privacy', (e) => document.dispatchEvent(new CustomEvent('campriv', { detail: JSON.parse(e.data) })));
-  es.addEventListener('event', (e) => { const ev = JSON.parse(e.data); onStored(ev); popupEvent(ev); });
-  es.addEventListener('event-update', () => onStored(null));
+  es.addEventListener('event', (e) => { const ev = JSON.parse(e.data); onStored(ev); popupEvent(ev); refreshBadges(); });
+  es.addEventListener('event-update', () => { onStored(null); refreshBadges(); });
 }
 
 // ---------- lampo rosso (2 secondi in totale, con dissolvenza) ----------
@@ -582,16 +582,170 @@ async function loadPeople(kind = 'people') {
           }, '✕')),
         samples));
   };
-  // Persone, animali e veicoli sono tre schede separate; chi ha un suggerimento da confermare va in cima.
-  const shown = people.filter((p) => groupOf(p) === kind).sort((a, b) => !!b.suggestId - !!a.suggestId);
+  // Persone, animali e veicoli sono tre schede separate, ciascuna divisa in due: sopra chi ha già un nome,
+  // sotto chi è ancora da identificare (con un suggerimento da confermare va in cima).
+  const group = people.filter((p) => groupOf(p) === kind);
+  const named = group.filter((p) => p.name);
+  const unknown = group.filter((p) => !p.name).sort((a, b) => !!b.suggestId - !!a.suggestId);
+  for (const k of Object.keys(unknownBy)) unknownBy[k] = people.filter((p) => groupOf(p) === k && !p.name).length;
+  paintBadges();
+  for (const id of [...picked]) if (!unknown.some((p) => p.id === id)) picked.delete(id); // chi non c'è più (unito, nominato) esce dalla selezione
+
+  const unknownBox = el('div', { class: 'people-sec' });
+  const pickBar = el('div', { class: 'pick-bar', hidden: true });
+  const renderPickBar = () => {
+    for (const c of $$('.person.unk', unknownBox)) {
+      const on = picked.has(Number(c.dataset.id));
+      c.classList.toggle('picked', on);
+      const ck = $('input.pick', c);
+      if (ck) ck.checked = on;
+    }
+    pickBar.hidden = !picked.size;
+    if (!picked.size) return;
+    const chosen = unknown.filter((p) => picked.has(p.id));
+    const species = new Set(chosen.map((p) => p.species || ''));
+    // Si può unire solo a un soggetto dello stesso tipo (stessa specie).
+    const targets = named.filter((o) => species.size === 1 && (o.species || '') === [...species][0]);
+    const into = el('select', {}, new Option(t('people.merge'), ''), ...targets.map((o) => new Option(o.name, o.id)), new Option(t('people.pickNew'), 'new'));
+    into.onchange = async () => {
+      if (!into.value) return;
+      const ids = [...picked];
+      let target = Number(into.value);
+      let ok = 0, bad = 0;
+      try {
+        if (into.value === 'new') {
+          const nm = (prompt(t('people.pickNewPrompt')) || '').trim().slice(0, 60);
+          if (!nm) { into.value = ''; return; }
+          const same = named.find((o) => o.name.toLowerCase() === nm.toLowerCase() && (o.species || '') === [...species][0]);
+          if (same) target = same.id;
+          else { target = ids.shift(); await api('PUT', `/api/persons/${target}`, { name: nm }); ok++; }
+        }
+        for (const id of ids) { try { await api('POST', `/api/persons/${id}/merge`, { into: target }); ok++; } catch { bad++; } }
+        toast(t('people.pickDone', { n: ok }) + (bad ? ` ${t('people.pickFailed', { n: bad })}` : ''), bad ? { kind: 'err' } : undefined);
+      } catch (err) { toast(errorText(err), { kind: 'err' }); }
+      picked.clear();
+      loadPeople(kind);
+    };
+    pickBar.replaceChildren(
+      el('b', {}, t('people.pickCount', { n: picked.size })),
+      el('button', { type: 'button', onclick: () => { picked.clear(); renderPickBar(); } }, t('people.pickNone')),
+      into);
+  };
+  const mark = (p) => {
+    const node = card(p);
+    node.classList.add('unk');
+    node.dataset.id = p.id;
+    node.prepend(el('input', {
+      type: 'checkbox', class: 'pick', title: t('people.pickAll'),
+      onchange: (ev) => { if (ev.target.checked) picked.add(p.id); else picked.delete(p.id); renderPickBar(); },
+    }));
+    return node;
+  };
   const emptyKey = { people: 'people.emptyPeople', pets: 'people.emptyPets', vehicles: 'people.emptyVehicles' }[kind];
-  box.append(...(shown.length ? shown.map(card) : [el('p', { class: 'note' }, t(emptyKey))]));
-  box.append(el('button', { type: 'button', onclick: async () => { const r = await api('POST', '/api/recognition/reprocess', { again: true }); toast(`${r.queued}`); } }, t('people.reprocess')));
+  const head = (key, n, extra) => el('h4', { class: 'grp' }, `${t(key)} `, el('span', { class: 'cnt' }, String(n)), extra || null);
+  box.append(
+    head('people.secNamed', named.length),
+    ...(named.length ? named.map(card) : [el('p', { class: 'note' }, t(group.length ? 'people.noneNamed' : emptyKey))]),
+    head('people.secUnknown', unknown.length, unknown.length ? el('button', { type: 'button', class: 'mini', onclick: () => { for (const p of unknown) picked.add(p.id); renderPickBar(); } }, t('people.pickAll')) : null),
+    pickBar,
+    ...(unknown.length ? unknown.map(mark) : [el('p', { class: 'note' }, t('people.noneUnknown'))]));
+  renderPickBar();
+
+  // Analisi degli eventi già salvati, con barra di avanzamento (anche se l'analisi era già in corso).
+  const bar = el('progress', { max: 1, value: 0 });
+  const barLabel = el('span', { class: 'note' });
+  const barBox = el('div', { class: 'arc-progress', hidden: true }, barLabel, bar);
+  const watch = () => {
+    clearInterval(reprocessTimer);
+    const tick = async () => {
+      if (!document.body.contains(barBox)) { clearInterval(reprocessTimer); reprocessTimer = null; return; }
+      let pr;
+      try { pr = await api('GET', '/api/recognition/progress'); } catch { return; }
+      if (pr.pending > 0) {
+        barBox.hidden = false;
+        bar.max = pr.total; bar.value = pr.total - pr.pending;
+        barLabel.textContent = t('people.running', { done: pr.total - pr.pending, total: pr.total });
+        return;
+      }
+      clearInterval(reprocessTimer); reprocessTimer = null;
+      barBox.hidden = false; bar.max = 1; bar.value = 1; barLabel.textContent = t('people.analysed');
+      toast(t('people.analysed'));
+      refreshBadges(); // nel frattempo sono nati nuovi soggetti da identificare
+      if (tab === kind) loadPeople(kind);
+    };
+    reprocessTimer = setInterval(tick, 1000);
+  };
+  const run = el('button', {
+    type: 'button',
+    onclick: async () => {
+      run.disabled = true;
+      try {
+        const r = await api('POST', '/api/recognition/reprocess', { again: true });
+        if (!r.queued) { barBox.hidden = false; bar.max = 1; bar.value = 1; barLabel.textContent = t('people.nothingToDo'); return; }
+        barBox.hidden = false; bar.removeAttribute('value'); barLabel.textContent = t('people.preparing');
+        watch();
+      } catch (err) { toast(errorText(err), { kind: 'err' }); } finally { run.disabled = false; }
+    },
+  }, t('people.reprocess'));
+  box.append(run, barBox);
+  api('GET', '/api/recognition/progress').then((pr) => { if (pr.pending > 0) { barBox.hidden = false; watch(); } }).catch(() => {});
+}
+let reprocessTimer = null;
+const picked = new Set(); // soggetti da identificare scelti per essere uniti insieme
+const unknownBy = { people: 0, pets: 0, vehicles: 0 };
+let unseen = 0;
+
+// ---------- pallini rossi con il numero: eventi nuovi e soggetti ancora da identificare ----------
+function setBadge(node, n) {
+  if (!node) return;
+  let b = node.querySelector(':scope > .nbadge');
+  if (!n) { b?.remove(); return; }
+  if (!b) { b = el('span', { class: 'nbadge' }); node.append(b); }
+  b.textContent = n > 99 ? '99+' : String(n);
+}
+function paintBadges() {
+  const admin = isAdmin();
+  const todo = admin ? unknownBy.people + unknownBy.pets + unknownBy.vehicles : 0;
+  setBadge($('#btn-events'), unseen + todo);
+  for (const b of $$('.tabs button', $('#events'))) {
+    const k = b.dataset.tab;
+    b.textContent = t({ events: 'ev.tabEvents', people: 'ev.tabPeople', pets: 'ev.tabPets', vehicles: 'ev.tabVehicles' }[k]);
+    setBadge(b, k === 'events' ? unseen : admin ? unknownBy[k] : 0);
+  }
+}
+/** Chi entra nell'elenco degli eventi li ha visti: il numero si azzera (si ricorda l'ora del server). */
+async function markSeen() {
+  unseen = 0;
+  paintBadges();
+  try { pref.set('evSeen', String((await api('GET', '/api/events/unseen?since=9007199254740991')).now)); } catch { /* offline */ }
+}
+let badgeTimer = null;
+async function refreshBadges() {
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(async () => {
+    try {
+      if ($('#events').open && tab === 'events') await markSeen();
+      else {
+        let since = Number(pref.get('evSeen')) || 0;
+        if (!since) { since = (await api('GET', '/api/events/unseen?since=9007199254740991')).now; pref.set('evSeen', String(since)); }
+        unseen = (await api('GET', `/api/events/unseen?since=${since}`)).n;
+      }
+    } catch { /* non ancora collegato */ }
+    if (isAdmin()) {
+      try {
+        const all = await api('GET', '/api/persons');
+        for (const k of Object.keys(unknownBy)) unknownBy[k] = all.filter((p) => groupOf(p) === k && !p.name).length;
+      } catch { /* riconoscimento non attivo */ }
+    }
+    paintBadges();
+  }, 600);
 }
 
 function switchTab(name) {
   if (name !== 'events' && !isAdmin()) name = 'events'; // persone, animali e veicoli riconosciuti: solo amministratore
   tab = name;
+  picked.clear();
+  if (name === 'events') markSeen();
   for (const b of $$('.tabs button', $('#events'))) b.classList.toggle('on', b.dataset.tab === name);
   $('#ev-tab-events').hidden = name !== 'events';
   $('#ev-people').hidden = name === 'events';
@@ -602,7 +756,8 @@ async function openEvents() {
   const body = $('#events-body');
   body.replaceChildren(buildEventsTab(), el('div', { id: 'ev-people', class: 'people', hidden: true }));
   $('#events-title').textContent = t('ev.title');
-  for (const b of $$('.tabs button', $('#events'))) b.textContent = t({ events: 'ev.tabEvents', people: 'ev.tabPeople', pets: 'ev.tabPets', vehicles: 'ev.tabVehicles' }[b.dataset.tab]);
+  paintBadges();
+  refreshBadges();
   personFilter = null;
   selectedId = null;
   selectMode = false;
@@ -629,6 +784,8 @@ function onStored() {
 export function initEvents(appApi) {
   app = appApi;
   connect();
+  setTimeout(refreshBadges, 1500);
+  setInterval(refreshBadges, 60_000);
   $('#btn-events').addEventListener('click', openEvents);
   $('#events-close').addEventListener('click', () => $('#events').close());
   for (const b of $$('.tabs button', $('#events'))) b.addEventListener('click', () => switchTab(b.dataset.tab));
