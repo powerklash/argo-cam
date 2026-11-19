@@ -16,7 +16,7 @@ Visualizzatore **multi-telecamera locale** per PC e telefono. Reolink, Eufy (P2P
 - **Allerta incendio e allagamento** (controlli euristici sul video, per telecamera, con sirena e banner). Sono approssimativi: **non sostituiscono** un rivelatore di fumo o di allagamento.
 - **Archivio di rete**: sposta i filmati vecchi su SMB, WebDAV o cartella montata, restando ricercabili e riproducibili.
 - **Utenti e permessi**: amministratore e livelli *Guarda* / *Controlla* per telecamera, password scrypt, blocco dopo tentativi falliti, protezione CSRF.
-- Popup del campanello con audio bidirezionale, icone e stato Home Assistant (token solo sul server), icone batteria, pagina per scaricare il certificato sul telefono.
+- Popup del campanello con audio bidirezionale, icone e stato Home Assistant (token solo sul server; icone monocromatiche di Home Assistant con ricerca in più lingue, oltre alle emoji), icone batteria, pagina per scaricare il certificato sul telefono.
 
 ## Immagini
 

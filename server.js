@@ -9,6 +9,7 @@ import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import crypto, { randomBytes, createHash } from 'node:crypto';
@@ -30,6 +31,7 @@ import * as archive from './lib/archive.js';
 import * as battery from './lib/battery.js';
 import * as hazard from './lib/hazard.js';
 import * as secrets from './lib/secrets.js';
+import * as mdi from './lib/mdi.js';
 import * as discovery from './lib/discovery.js';
 import os from 'node:os';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -88,13 +90,13 @@ function pubFor(user, cam) {
   const live = { caps: events.getCaps(cam.id), status: events.getStatus(cam.id), privacy: privacy.get(cam.id), level, batteryLevel: cam.battery ? battery.get(cam.id) : null };
   if (user.role === 'admin') {
     const pub = publicCamera(cam);
-    return { ...pub, ha: pub.ha.map((h) => ({ ...h, control: haLib.canControl(h.entity), kind: haLib.controlKind(h.entity) })), ...live };
+    return { ...pub, ha: pub.ha.map((h) => ({ ...h, path: mdi.pathOf(h.icon), control: haLib.canControl(h.entity), kind: haLib.controlKind(h.entity) })), ...live };
   }
   return {
     id: cam.id, name: cam.name, brand: cam.brand, battery: cam.battery === true, wakeLimit: cam.wakeLimit ?? null,
     alerts: cam.alerts !== false, params: {}, ...live,
     // Icone Home Assistant: senza il nome dell'entità, solo ciò che serve a disegnarle.
-    ha: (cam.ha || []).map((h, i) => ({ i, label: h.label, icon: h.icon, control: haLib.canControl(h.entity), kind: haLib.controlKind(h.entity) })),
+    ha: (cam.ha || []).map((h, i) => ({ i, label: h.label, icon: h.icon, path: mdi.pathOf(h.icon), control: haLib.canControl(h.entity), kind: haLib.controlKind(h.entity) })),
   };
 }
 
@@ -593,7 +595,22 @@ async function handleApi(req, res, url) {
     const unknown = found.filter((f) => !f.serial).map((f) => ({ ip: f.ip }));
     return json(res, 200, { configured: eufy.isConfigured(), devices, unknown });
   }
-  // ----- ricerca automatica di telecamere nella rete (finestra "Nuova telecamera") -----
+  // ----- elenco dei canali di un hub/NVR Reolink, per scegliere il canale nel modulo della telecamera -----
+  if (parts[1] === 'reolink' && parts[2] === 'channels' && req.method === 'POST') {
+    needAdmin();
+    const body = await readBody(req);
+    const host = String(body.host || '').trim();
+    if (!/^[A-Za-z0-9._-]+$/.test(host)) throw new HttpError(400, 'Indirizzo non valido (solo IP o nome host)');
+    const onHost = cameras.filter((c) => c.brand === 'reolink' && c.params.host === host);
+    // Credenziali scritte nel modulo, altrimenti quelle di una telecamera già aggiunta sullo stesso hub (restano sul server)
+    let cam = null;
+    if (body.password) cam = { id: null, params: { host, username: String(body.username || 'admin'), password: String(body.password) } };
+    else if (onHost.length) cam = onHost[0];
+    if (!cam) throw new HttpError(400, 'Indica utente e password dell\'hub per elencare i canali');
+    const list = await reolink.allChannels(cam);
+    const usedBy = (n) => onHost.find((c) => (Number(c.params.channel) || 1) === n && c.id !== body.excludeId)?.name || null;
+    return json(res, 200, { host, channels: list.map((c) => ({ ...c, usedBy: usedBy(c.channel) })) });
+  }  // ----- ricerca automatica di telecamere nella rete (finestra "Nuova telecamera") -----
   if (parts[1] === 'discovery') {
     needAdmin();
     if (!parts[2] && req.method === 'POST') {
@@ -1080,7 +1097,7 @@ const PUBLIC_FILES = new Set([
 ]);
 const ADMIN_FILES = new Set(['/admin.html', '/admin.js']);
 
-function serveStatic(res, pathname) {
+function serveStatic(res, pathname, req) {
   const rel = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
   const file = path.join(PUBLIC, path.normalize(rel));
   if (!file.startsWith(PUBLIC + path.sep)) {
@@ -1092,7 +1109,19 @@ function serveStatic(res, pathname) {
       res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Non trovato');
       return;
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' };
+    // Il grande elenco delle icone (mdi.json, ~2,6 MB) si comprime e si rivalida con ETag: si scarica una volta sola.
+    if (req && file.endsWith('mdi.json')) {
+      const etag = `"${createHash('sha1').update(data).digest('hex').slice(0, 16)}"`;
+      headers.ETag = etag;
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers).end(); return; }
+      if (/\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+        headers['Content-Encoding'] = 'gzip';
+        headers.Vary = 'Accept-Encoding';
+        data = zlib.gzipSync(data, { level: 6 });
+      }
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -1134,10 +1163,10 @@ function handleRequest(req, res) {
       if (!go2rtcAllowed(user, req.method, url)) return json(res, 403, { error: 'Flusso non consentito' });
       return proxyHttp(req, res, url);
     }
-    if (PUBLIC_FILES.has(p)) return serveStatic(res, p);
+    if (PUBLIC_FILES.has(p)) return serveStatic(res, p, req);
     if (!user) return redirectToLogin(res, url);
     if (ADMIN_FILES.has(p) && user.role !== 'admin') return res.writeHead(403, { 'Content-Type': 'text/plain' }).end(tr('Riservato agli amministratori'));
-    return serveStatic(res, p);
+    return serveStatic(res, p, req);
   } catch (err) {
     console.error('[richiesta]', err);
     if (!res.headersSent) res.writeHead(500).end();

@@ -16,7 +16,7 @@ A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (loc
 - **Fire / flood alerts** (heuristic checks on camera video, per camera, with siren and banner). They are approximate and **do not replace** a smoke or flood detector.
 - **Network archive**: move old clips to SMB, WebDAV or a mounted folder while keeping them searchable and playable.
 - **Users and permissions**: admin and per-camera *watch* / *control* levels, scrypt passwords, brute-force lockout, CSRF protection.
-- Doorbell popup with two-way audio, Home Assistant icons/state (read-only token stored server side), battery level icons, certificate download page for phones.
+- Doorbell popup with two-way audio, Home Assistant icons/state (read-only token stored server side; monochrome Home Assistant icons with a multilingual search box, plus emoji), battery level icons, certificate download page for phones.
 
 ## Screenshots
 

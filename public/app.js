@@ -472,9 +472,78 @@ function renderFields(brandId, params = {}) {
     label.append(input);
     box.append(label);
   }
+  channelLoader = null;
   if (brandId === 'eufyp2p') eufyHelpers(box);
+  if (brandId === 'reolink') reolinkChannelHelpers(params);
 }
 
+// Reolink: elenco a tendina dei canali dell'hub/NVR, con il nome della telecamera accanto ai canali già in uso o che
+// l'hub conosce ma non sono ancora nell'app. Si legge dall'hub con utente e password del modulo oppure, se l'hub è già
+// usato da altre telecamere, con le loro credenziali (restano sul server).
+let channelLoader = null; // (canale da selezionare) => Promise: attivo solo con la marca Reolink
+function reolinkChannelHelpers(params = {}) {
+  const first = form.elements.p_channel;
+  if (!first) return;
+  let hubChannels = [];
+  const status = el('p', { class: 'note' });
+  const btn = el('button', { type: 'button', class: 'mini' }, t('ch.list'));
+  first.closest('label').after(el('div', { class: 'ch-tools' }, btn, status));
+
+  const knownHost = (host) => state.cameras.some((c) => c.brand === 'reolink' && c.params?.host === host);
+  const toInput = () => { // torna al campo numerico (l'indirizzo è cambiato o l'elenco non è più valido)
+    const cur = form.elements.p_channel;
+    if (cur.tagName !== 'SELECT') return;
+    const input = el('input', { type: 'number', name: 'p_channel', min: 1, max: 64, value: cur.value || 1 });
+    cur.replaceWith(input);
+    hubChannels = [];
+  };
+  const showList = (list, wanted) => {
+    hubChannels = list;
+    const cur = form.elements.p_channel;
+    const value = String(wanted ?? cur.value ?? 1);
+    const sel = el('select', { name: 'p_channel' });
+    for (const c of list) {
+      const text = c.usedBy ? `${c.channel} · ${c.usedBy} — ${t('ch.inUse')}`
+        : c.name || c.uid ? `${c.channel} · ${c.name || '?'} — ${t('ch.notAdded')}${c.online ? '' : ` (${t('scan.offline')})`}`
+          : `${c.channel} · ${t('ch.free')}`;
+      const o = new Option(text, String(c.channel));
+      o.disabled = !!c.usedBy && String(c.channel) !== value; // un canale ha una sola telecamera
+      sel.add(o);
+    }
+    if (!list.some((c) => String(c.channel) === value)) sel.add(new Option(`${value} · ${t('ch.notOnHub')}`, value));
+    sel.value = value;
+    sel.addEventListener('change', () => { // una telecamera nota all'hub ma non ancora aggiunta dà il suo nome al modulo
+      const c = hubChannels.find((x) => String(x.channel) === sel.value);
+      if (c && !c.usedBy && c.name && !form.elements.name.value) form.elements.name.value = c.name;
+    });
+    cur.replaceWith(sel);
+  };
+  const load = async (wanted) => {
+    const host = form.elements.p_host?.value.trim();
+    if (!host) { status.className = 'note'; status.textContent = t('ch.needHost'); return; }
+    btn.disabled = true;
+    status.className = 'note';
+    status.textContent = t('ch.loading');
+    try {
+      const r = await api('POST', '/api/reolink/channels', { host, username: form.elements.p_username?.value, password: form.elements.p_password?.value, excludeId: editing?.id });
+      showList(r.channels, wanted);
+      status.textContent = '';
+    } catch (err) {
+      status.className = 'note err';
+      status.textContent = errorText(err);
+    }
+    btn.disabled = false;
+  };
+  channelLoader = load;
+  btn.addEventListener('click', () => load());
+  form.elements.p_host?.addEventListener('change', () => {
+    toInput();
+    if (knownHost(form.elements.p_host.value.trim())) load();
+  });
+  // Modifica di una telecamera, o hub già usato: l'elenco compare subito
+  const host = form.elements.p_host?.value.trim() || params.host;
+  if (host && (editing || knownHost(host))) load(params.channel);
+}
 // Eufy: ricerca in rete; l'IP si ricava dal numero di serie scelto.
 function eufyHelpers(box) {
   const serial = form.elements.p_serial;
@@ -574,6 +643,7 @@ function useFound(d) {
   if (d.hub) { // canale di un hub Reolink: stesso utente e password delle telecamere già aggiunte sull'hub (restano sul server)
     set('channel', d.channel);
     set('username', d.username);
+    channelLoader?.(d.channel); // la tendina dei canali dell'hub, con questo già selezionato
     const pass = form.elements.p_password;
     if (d.copyFrom && pass) { form.dataset.copyFrom = d.copyFrom; pass.placeholder = t('scan.samePassword'); }
   }
