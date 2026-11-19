@@ -22,6 +22,7 @@ import * as events from './lib/events.js';
 import * as db from './lib/db.js';
 import * as search from './lib/search.js';
 import * as recognition from './lib/recognition.js';
+import * as eufyPush from './lib/eufy-push.js';
 import * as privacy from './lib/privacy.js';
 import * as auth from './lib/auth.js';
 import { getSettings, updateSettings, EVENT_KINDS } from './lib/settings.js';
@@ -658,12 +659,14 @@ async function handleApi(req, res, url) {
   // ----- Eufy: accesso al cloud dalle impostazioni (account, sveglia delle batterie) -----
   if (parts[1] === 'eufy' && parts[2] === 'cloud') {
     needAdmin();
-    if (req.method === 'GET') return json(res, 200, { available: eufyLogin.available(), configured: eufy.isConfigured(), ...eufyCloud.status() });
+    if (req.method === 'GET') return json(res, 200, { available: eufyLogin.available(), configured: eufy.isConfigured(), push: eufyPush.status(), ...eufyCloud.status() });
     if (req.method === 'DELETE') { eufyCloud.disconnect(); return json(res, 200, { ok: true }); }
   }
   if (parts[1] === 'eufy' && parts[2] === 'login' && req.method === 'POST') {
     needAdmin();
-    return json(res, 200, await eufyLogin.step(await readBody(req)));
+    const stepResult = await eufyLogin.step(await readBody(req));
+    if (stepResult?.status === 'done') eufyPush.restart(); // nuova sessione Eufy: si riaprono le notifiche
+    return json(res, 200, stepResult);
   }
 
   // ----- riconoscimento (volti e mezzi) e persone: solo amministratore -----
