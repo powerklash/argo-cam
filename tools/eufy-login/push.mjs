@@ -57,11 +57,28 @@ async function run() {
     }
   });
   push.on('close', () => out({ t: 'state', connected: false }));
-  push.on('message', (m) => {
+  // L'anteprima si scarica con il token dell'account e arriva cifrata (i primi 256 byte): si decifra con l'identificativo
+  // P2P della stazione, come fa l'app Eufy. A Argo arriva già pronta (base64).
+  const libDir = path.dirname(fileURLToPath(import.meta.resolve('eufy-security-client')));
+  const { decodeImage } = await import(pathToFileURL(path.join(libDir, 'http', 'utils.js')).href);
+  let cloud = null;
+  try { cloud = secrets.readSecretFile(path.join(DATA, 'eufy-cloud.json'))?.data; } catch { cloud = null; }
+  const fetchPic = async (m) => {
+    const did = cloud?.stations?.[m.station_sn]?.did || cloud?.stations?.[m.device_sn]?.did;
+    if (!did || !m.pic_url) return null;
+    const r = await api.request({ method: 'GET', endpoint: m.pic_url, responseType: 'buffer' }, true);
+    if (r.status !== 200) return null;
+    const img = decodeImage(did, Buffer.from(r.data));
+    return img.length > 500 && img[0] === 0xff && img[1] === 0xd8 ? img.toString('base64') : null;
+  };
+
+  push.on('message', async (m) => {
     save();
+    let pic = null;
+    if (m.pic_url) { try { pic = await fetchPic(m); } catch { pic = null; } }
     out({
       t: 'msg', name: m.name, title: m.title, content: m.content, type: m.type, eventType: m.event_type, msgType: m.msg_type,
-      deviceSn: m.device_sn, stationSn: m.station_sn, eventTime: m.event_time, picUrl: m.pic_url || '', pushCount: m.push_count, id: m.unique_id,
+      deviceSn: m.device_sn, stationSn: m.station_sn, eventTime: m.event_time, hasPic: !!m.pic_url, pic, pushCount: m.push_count, id: m.unique_id,
       session: m.event_session, filePath: m.file_path,
     });
   });
