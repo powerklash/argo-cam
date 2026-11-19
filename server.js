@@ -656,6 +656,7 @@ async function handleApi(req, res, url) {
     needAdmin();
     if (parts[2] === 'status' && req.method === 'GET') return json(res, 200, { ...(await recognition.status()), ...recognition.progress() });
     if (parts[2] === 'progress' && req.method === 'GET') return json(res, 200, recognition.progress());
+    if (parts[2] === 'reprocess' && req.method === 'GET') return json(res, 200, recognition.reprocessInfo());
     if (parts[2] === 'reprocess' && req.method === 'POST') return json(res, 200, await recognition.reprocess({ again: (await readBody(req)).again === true }));
   }
   if (parts[1] === 'persons') {
@@ -773,6 +774,12 @@ async function handleApi(req, res, url) {
       const e = db.getEvent(Number(parts[2]));
       if (!e || (!isAdmin && level(e.camId) < 1)) throw new HttpError(404, 'Evento non trovato');
       return json(res, 200, isAdmin ? e : PUBLIC_ONLY_FIELDS(e));
+    }
+    if (parts[2] && parts[3] === 'reanalyze' && req.method === 'POST') { // rifà da zero il riconoscimento di un solo evento
+      needAdmin();
+      const r = await recognition.reanalyze(Number(parts[2]));
+      for (const rel of r.crops) fs.rm(path.join(db.EVENTS_DIR, rel), { force: true }, () => {});
+      return json(res, 200, { ok: true });
     }
     if (parts[2] && parts[3] === 'subject' && req.method === 'POST') { // corregge chi/cosa e' stato riconosciuto nell'evento
       needAdmin();

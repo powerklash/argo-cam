@@ -323,7 +323,8 @@ function card(e) {
     e.vehicleType && badge(t(`vtype.${e.vehicleType}`)),
     e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
     e.plate && badge(e.plate, 'plate'),
-    whoBadge(e), e.archived && badge(`🗄️ ${t('ev.archived')}`));
+    whoBadge(e), e.archived && badge(`🗄️ ${t('ev.archived')}`),
+    isAdmin() && e.meta?.objects && badge('🔍', 'analysed'));
   const check = el('span', { class: 'ev-check' }, selected.has(e.id) ? '☑' : '☐');
   const node = el('button', {
     class: 'ev-card', type: 'button', dataset: { id: e.id },
@@ -397,6 +398,17 @@ function showDetail(e) {
       e.vehicleType && badge(t(`vtype.${e.vehicleType}`)), e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
       e.plate && badge(`${t('ev.plate')} ${e.plate}`), isAdmin() ? null : whoBadge(e)),
     isAdmin() ? subjectsEditor(e) : null,
+    isAdmin() && e.snapshot ? el('div', { class: 'row analysis' },
+      badge(`🔍 ${t(e.meta?.objects ? 'ev.analysed' : 'ev.notAnalysed')}${e.meta?.analysedAt ? ` · ${fmtDate(e.meta.analysedAt, { dateStyle: 'short', timeStyle: 'short' })}` : ''}`, 'analysed'),
+      el('button', {
+        type: 'button', class: 'mini',
+        onclick: async (ev) => {
+          if (!confirm(t('ev.reanalyzeConfirm'))) return;
+          ev.target.disabled = true;
+          try { await api('POST', `/api/events/${e.id}/reanalyze`); toast(t('ev.reanalyzeStarted')); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+          ev.target.disabled = false;
+        },
+      }, `↻ ${t('ev.reanalyze')}`)) : null,
     e.clip && e.snapshot ? el('a', { href: `/media/${e.snapshot}`, target: '_blank' }, '🖼') : null,
     e.clip ? el('a', { class: 'dl', href: `/media/${e.clip}`, download: e.clip.split('/').pop() }, `⬇ ${t('ev.downloadOrig')}`) : null,
     el('div', { class: 'row' },
@@ -582,19 +594,34 @@ async function loadPeople(kind = 'people') {
           }, '✕')),
         samples));
   };
-  // Persone, animali e veicoli sono tre schede separate, ciascuna divisa in due: sopra chi ha già un nome,
-  // sotto chi è ancora da identificare (con un suggerimento da confermare va in cima).
+  // Persone, animali e veicoli sono tre schede separate, ciascuna divisa in due: chi ha già un nome e chi è
+  // ancora da identificare (con un suggerimento da confermare va in cima). Le due parti stanno una sotto l'altra
+  // oppure affiancate (registrati a sinistra, da identificare a destra, ognuna con il proprio scorrimento).
   const group = people.filter((p) => groupOf(p) === kind);
   const named = group.filter((p) => p.name);
   const unknown = group.filter((p) => !p.name).sort((a, b) => !!b.suggestId - !!a.suggestId);
   for (const k of Object.keys(unknownBy)) unknownBy[k] = people.filter((p) => groupOf(p) === k && !p.name).length;
   paintBadges();
-  for (const id of [...picked]) if (!unknown.some((p) => p.id === id)) picked.delete(id); // chi non c'è più (unito, nominato) esce dalla selezione
+  const byId = new Map(group.map((p) => [p.id, p]));
+  for (const id of [...picked]) if (!byId.has(id)) picked.delete(id); // chi non c'è più (unito, eliminato) esce dalla selezione
+  const split = pref.get('peopleSplit') === '1' && !isPhone();
+  box.classList.toggle('split', split);
 
-  const unknownBox = el('div', { class: 'people-sec' });
+  /** Unisce uno o più soggetti a uno già registrato (pulsante "Unisci con…" o trascinamento). */
+  const mergeInto = async (list, target) => {
+    let ok = 0, bad = 0;
+    for (const id of list) {
+      if (id === target) continue;
+      try { await api('POST', `/api/persons/${id}/merge`, { into: target }); ok++; } catch { bad++; }
+    }
+    toast(t('people.pickDone', { n: ok }) + (bad ? ` ${t('people.pickFailed', { n: bad })}` : ''), bad ? { kind: 'err' } : undefined);
+    picked.clear();
+    loadPeople(kind);
+  };
+
   const pickBar = el('div', { class: 'pick-bar', hidden: true });
   const renderPickBar = () => {
-    for (const c of $$('.person.unk', unknownBox)) {
+    for (const c of $$('.person[data-id]', box)) {
       const on = picked.has(Number(c.dataset.id));
       c.classList.toggle('picked', on);
       const ck = $('input.pick', c);
@@ -602,53 +629,94 @@ async function loadPeople(kind = 'people') {
     }
     pickBar.hidden = !picked.size;
     if (!picked.size) return;
-    const chosen = unknown.filter((p) => picked.has(p.id));
-    const species = new Set(chosen.map((p) => p.species || ''));
-    // Si può unire solo a un soggetto dello stesso tipo (stessa specie).
-    const targets = named.filter((o) => species.size === 1 && (o.species || '') === [...species][0]);
-    const into = el('select', {}, new Option(t('people.merge'), ''), ...targets.map((o) => new Option(o.name, o.id)), new Option(t('people.pickNew'), 'new'));
-    into.onchange = async () => {
-      if (!into.value) return;
-      const ids = [...picked];
-      let target = Number(into.value);
-      let ok = 0, bad = 0;
-      try {
-        if (into.value === 'new') {
-          const nm = (prompt(t('people.pickNewPrompt')) || '').trim().slice(0, 60);
-          if (!nm) { into.value = ''; return; }
-          const same = named.find((o) => o.name.toLowerCase() === nm.toLowerCase() && (o.species || '') === [...species][0]);
-          if (same) target = same.id;
-          else { target = ids.shift(); await api('PUT', `/api/persons/${target}`, { name: nm }); ok++; }
-        }
-        for (const id of ids) { try { await api('POST', `/api/persons/${id}/merge`, { into: target }); ok++; } catch { bad++; } }
-        toast(t('people.pickDone', { n: ok }) + (bad ? ` ${t('people.pickFailed', { n: bad })}` : ''), bad ? { kind: 'err' } : undefined);
-      } catch (err) { toast(errorText(err), { kind: 'err' }); }
-      picked.clear();
-      loadPeople(kind);
-    };
-    pickBar.replaceChildren(
+    const chosen = group.filter((p) => picked.has(p.id));
+    const parts = [
       el('b', {}, t('people.pickCount', { n: picked.size })),
-      el('button', { type: 'button', onclick: () => { picked.clear(); renderPickBar(); } }, t('people.pickNone')),
-      into);
+      el('button', { type: 'button', onclick: () => { picked.clear(); renderPickBar(); } }, t('people.pickNone'))];
+    // Unire ha senso solo per soggetti ancora senza nome, e verso uno dello stesso tipo (stessa specie).
+    if (chosen.every((p) => !p.name)) {
+      const species = new Set(chosen.map((p) => p.species || ''));
+      const targets = named.filter((o) => species.size === 1 && (o.species || '') === [...species][0]);
+      const into = el('select', {}, new Option(t('people.merge'), ''), ...targets.map((o) => new Option(o.name, o.id)), new Option(t('people.pickNew'), 'new'));
+      into.onchange = async () => {
+        if (!into.value) return;
+        const ids = [...picked];
+        if (into.value !== 'new') return mergeInto(ids, Number(into.value));
+        const nm = (prompt(t('people.pickNewPrompt')) || '').trim().slice(0, 60);
+        if (!nm) { into.value = ''; return; }
+        const same = named.find((o) => o.name.toLowerCase() === nm.toLowerCase() && (o.species || '') === [...species][0]);
+        if (same) return mergeInto(ids, same.id);
+        try { await api('PUT', `/api/persons/${ids[0]}`, { name: nm }); } catch (err) { toast(errorText(err), { kind: 'err' }); return; }
+        mergeInto(ids.slice(1), ids[0]);
+      };
+      parts.push(into);
+    }
+    parts.push(el('button', {
+      type: 'button', class: 'danger',
+      onclick: async () => {
+        const ids = [...picked];
+        if (!confirm(t('people.delManyConfirm', { n: ids.length }))) return;
+        let ok = 0;
+        for (const id of ids) { try { await api('DELETE', `/api/persons/${id}`); ok++; } catch { /* già eliminato */ } }
+        toast(t('people.delDone', { n: ok }));
+        picked.clear();
+        loadPeople(kind);
+      },
+    }, `✕ ${t('people.delMany')}`));
+    pickBar.replaceChildren(...parts);
   };
-  const mark = (p) => {
+
+  // Scheda con la casella di selezione sotto l'immagine. Da identificare: l'immagine si trascina; registrati: ci si rilascia sopra.
+  const decorate = (p) => {
+    const unk = !p.name;
     const node = card(p);
-    node.classList.add('unk');
     node.dataset.id = p.id;
-    node.prepend(el('input', {
-      type: 'checkbox', class: 'pick', title: t('people.pickAll'),
+    node.classList.add(unk ? 'unk' : 'reg');
+    const thumb = node.firstElementChild;
+    const ck = el('input', {
+      type: 'checkbox', class: 'pick', checked: picked.has(p.id),
       onchange: (ev) => { if (ev.target.checked) picked.add(p.id); else picked.delete(p.id); renderPickBar(); },
-    }));
+    });
+    node.prepend(el('div', { class: 'pthumb' }, thumb, el('label', { class: 'pickrow' }, ck, t('people.pickSel'))));
+    if (unk) {
+      thumb.draggable = true;
+      thumb.title = t('people.dragTitle');
+      thumb.classList.add('drag');
+      thumb.addEventListener('dragstart', (ev) => {
+        dragIds = picked.has(p.id) ? [...picked].filter((i) => byId.get(i) && !byId.get(i).name) : [p.id];
+        ev.dataTransfer.setData('text/plain', dragIds.join(','));
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setDragImage(node, 20, 20);
+      });
+      thumb.addEventListener('dragend', () => { dragIds = null; for (const c of $$('.person.drop', box)) c.classList.remove('drop'); });
+    } else {
+      node.addEventListener('dragover', (ev) => { if (!dragIds) return; ev.preventDefault(); node.classList.add('drop'); });
+      node.addEventListener('dragleave', (ev) => { if (!node.contains(ev.relatedTarget)) node.classList.remove('drop'); });
+      node.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        node.classList.remove('drop');
+        const list = dragIds;
+        dragIds = null;
+        if (list?.length) mergeInto(list, p.id);
+      });
+    }
     return node;
   };
+
   const emptyKey = { people: 'people.emptyPeople', pets: 'people.emptyPets', vehicles: 'people.emptyVehicles' }[kind];
   const head = (key, n, extra) => el('h4', { class: 'grp' }, `${t(key)} `, el('span', { class: 'cnt' }, String(n)), extra || null);
+  const tools = el('div', { class: 'people-tools' },
+    isPhone() ? null : el('button', { type: 'button', class: 'mini', onclick: () => { pref.set('peopleSplit', split ? '0' : '1'); loadPeople(kind); } }, t(split ? 'people.stack' : 'people.split')),
+    named.length && unknown.length ? el('span', { class: 'note' }, t('people.dragHint')) : null);
   box.append(
-    head('people.secNamed', named.length),
-    ...(named.length ? named.map(card) : [el('p', { class: 'note' }, t(group.length ? 'people.noneNamed' : emptyKey))]),
-    head('people.secUnknown', unknown.length, unknown.length ? el('button', { type: 'button', class: 'mini', onclick: () => { for (const p of unknown) picked.add(p.id); renderPickBar(); } }, t('people.pickAll')) : null),
+    tools,
     pickBar,
-    ...(unknown.length ? unknown.map(mark) : [el('p', { class: 'note' }, t('people.noneUnknown'))]));
+    el('div', { class: 'people-cols' },
+      el('div', { class: 'people-sec sec-named' }, head('people.secNamed', named.length),
+        el('div', { class: 'sec-grid' }, ...(named.length ? named.map(decorate) : [el('p', { class: 'note' }, t(group.length ? 'people.noneNamed' : emptyKey))]))),
+      el('div', { class: 'people-sec sec-unk' },
+        head('people.secUnknown', unknown.length, unknown.length ? el('button', { type: 'button', class: 'mini', onclick: () => { for (const p of unknown) picked.add(p.id); renderPickBar(); } }, t('people.pickAll')) : null),
+        el('div', { class: 'sec-grid' }, ...(unknown.length ? unknown.map(decorate) : [el('p', { class: 'note' }, t('people.noneUnknown'))])))));
   renderPickBar();
 
   // Analisi degli eventi già salvati, con barra di avanzamento (anche se l'analisi era già in corso).
@@ -668,20 +736,24 @@ async function loadPeople(kind = 'people') {
         return;
       }
       clearInterval(reprocessTimer); reprocessTimer = null;
-      barBox.hidden = false; bar.max = 1; bar.value = 1; barLabel.textContent = t('people.analysed');
       toast(t('people.analysed'));
       refreshBadges(); // nel frattempo sono nati nuovi soggetti da identificare
       if (tab === kind) loadPeople(kind);
     };
     reprocessTimer = setInterval(tick, 1000);
   };
+  const done = (key) => { barBox.hidden = false; bar.max = 1; bar.value = 1; barLabel.textContent = t(key); };
   const run = el('button', {
     type: 'button',
     onclick: async () => {
       run.disabled = true;
       try {
-        const r = await api('POST', '/api/recognition/reprocess', { again: true });
-        if (!r.queued) { barBox.hidden = false; bar.max = 1; bar.value = 1; barLabel.textContent = t('people.nothingToDo'); return; }
+        // Gli eventi già analizzati si rifanno solo se l'utente lo conferma; altrimenti si analizzano quelli mai analizzati.
+        const info = await api('GET', '/api/recognition/reprocess');
+        const again = info.analysed > 0 && confirm(t('people.reprocessAsk', info));
+        if (!again && !info.fresh) return done('people.nothingToDo');
+        const r = await api('POST', '/api/recognition/reprocess', { again });
+        if (!r.queued) return done('people.nothingToDo');
         barBox.hidden = false; bar.removeAttribute('value'); barLabel.textContent = t('people.preparing');
         watch();
       } catch (err) { toast(errorText(err), { kind: 'err' }); } finally { run.disabled = false; }
@@ -690,6 +762,7 @@ async function loadPeople(kind = 'people') {
   box.append(run, barBox);
   api('GET', '/api/recognition/progress').then((pr) => { if (pr.pending > 0) { barBox.hidden = false; watch(); } }).catch(() => {});
 }
+let dragIds = null; // soggetti in trascinamento
 let reprocessTimer = null;
 const picked = new Set(); // soggetti da identificare scelti per essere uniti insieme
 const unknownBy = { people: 0, pets: 0, vehicles: 0 };

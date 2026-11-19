@@ -469,8 +469,19 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 5px; }
 .people .grp button { margin-left: auto; }
 .people .arc-progress { grid-column: 1 / -1; }
 .person { position: relative; }
-.person .pick { position: absolute; top: 12px; left: 12px; width: 20px; height: 20px; margin: 0; accent-color: var(--accent); z-index: 1; }
+.people > * { grid-column: 1 / -1; }
+.people-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.people-cols { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.people .sec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; align-content: start; }
+.people.split .people-cols { grid-template-columns: 1fr 1fr; align-items: start; }
+.people.split .people-sec { max-height: calc(100vh - 230px); overflow: auto; padding-right: 4px; }
+.people.split .sec-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.pthumb { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pthumb .pickrow { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #9aa4b2; cursor: pointer; }
+.person .pick { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.person .drag { cursor: grab; }
 .person.picked { outline: 2px solid var(--accent); }
+.person.drop { outline: 2px dashed #4caf50; background: #1f3a28; }
 .pick-bar { grid-column: 1 / -1; position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; background: #26303f; border: 1px solid var(--accent); border-radius: 8px; }
 .pick-bar[hidden] { display: none; }
 .scan-progress[hidden], .arc-progress[hidden], .scan-box[hidden] { display: none; } /* display:flex/grid sopra annullerebbe l'attributo hidden */
