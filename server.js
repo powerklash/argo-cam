@@ -23,6 +23,7 @@ import * as db from './lib/db.js';
 import * as search from './lib/search.js';
 import * as recognition from './lib/recognition.js';
 import * as eufyPush from './lib/eufy-push.js';
+import * as hazardLearn from './lib/hazard-learn.js';
 import * as privacy from './lib/privacy.js';
 import * as auth from './lib/auth.js';
 import { getSettings, updateSettings, EVENT_KINDS } from './lib/settings.js';
@@ -792,6 +793,35 @@ async function handleApi(req, res, url) {
       const e = db.getEvent(Number(parts[2]));
       if (!e || (!isAdmin && level(e.camId) < 1)) throw new HttpError(404, 'Evento non trovato');
       return json(res, 200, isAdmin ? e : PUBLIC_ONLY_FIELDS(e));
+    }
+    if (parts[2] && parts[3] === 'hub-original' && req.method === 'GET') { // filmato originale (qualità piena) dalla scheda dell'hub Reolink
+      const e = db.getEvent(Number(parts[2]));
+      if (!e || level(e.camId) < 1) throw new HttpError(404, 'Evento non trovato');
+      const cam = byId(e.camId);
+      const name = e.meta?.hubMain || e.meta?.hubName;
+      if (!cam || !name) throw new HttpError(404, 'Nessuna registrazione dell’hub per questo evento');
+      const src = await reolink.openDownload(cam, name);
+      res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Disposition': `attachment; filename="${cam.name.replace(/[^\w.-]+/g, '_')}_${name.slice(0, 40)}.mp4"`, ...(src.headers['content-length'] ? { 'Content-Length': src.headers['content-length'] } : {}) });
+      src.pipe(res);
+      res.on('close', () => src.destroy());
+      return;
+    }
+    if (parts[2] && parts[3] === 'kind' && req.method === 'POST') { // toglie o cambia il tag (tipo) di un evento; un falso allarme fa imparare
+      needAdmin();
+      const eventId = Number(parts[2]);
+      const e = db.getEvent(eventId);
+      if (!e) throw new HttpError(404, 'Evento non trovato');
+      const body = await readBody(req);
+      const kind = EVENT_KINDS.includes(body.kind) ? body.kind : 'motion';
+      const meta = { ...(e.meta || {}) };
+      if (body.falseAlarm === true && ['fire', 'flood'].includes(e.kind)) {
+        meta.falseAlarm = { kind: e.kind, at: Date.now() };
+        hazardLearn.report(e.camId, e.kind, meta.bbox);
+      }
+      db.updateEvent(eventId, { kind, meta });
+      const fresh = db.getEvent(eventId);
+      events.bus.emit('event-update', { id: eventId, camId: e.camId, kind });
+      return json(res, 200, fresh);
     }
     if (parts[2] && parts[3] === 'reanalyze' && req.method === 'POST') { // rifà da zero il riconoscimento di un solo evento
       needAdmin();

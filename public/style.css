@@ -485,6 +485,9 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 5px; }
 .people.split .people-cols { grid-template-columns: 1fr 1fr; align-items: start; }
 .people.split .people-sec { max-height: calc(100vh - 230px); overflow: auto; padding-right: 4px; }
 .people.split .sec-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.noimg.nothumb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #6b7686; background: #171b22; }
+.noimg.nothumb small { font-size: 10px; }
+.kind-tag { display: inline-flex; align-items: center; gap: 4px; }
 .pthumb { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pthumb .pickrow { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #9aa4b2; cursor: pointer; }
 .person .pick { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }

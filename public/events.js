@@ -3,6 +3,7 @@
 import { t, fmtDate, getLang } from './i18n.js';
 import { state, $, $$, api, el, toast, camById, pref, errorText, isAdmin } from './state.js';
 import './player.js';
+import { svgIcon, subjectIconName } from './icons.js';
 
 let app = null;
 
@@ -220,7 +221,6 @@ function openBell(camId) {
 const KIND_ORDER = ['person', 'vehicle', 'pet', 'face', 'package', 'motion', 'visitor', 'fire', 'flood'];
 const ANIMAL_SPECIES = new Set(['cat', 'dog', 'bird', 'horse', 'sheep', 'cow']);
 const VEHICLE_SPECIES = new Set(['car', 'truck', 'bus', 'motorcycle', 'bicycle']);
-const VEHICLE_ICON = { car: '🚗', truck: '🚚', bus: '🚌', motorcycle: '🏍️', bicycle: '🚲' };
 /** Gruppo (scheda) di una persona riconosciuta: persone, animali o veicoli. */
 const groupOf = (p) => (!p.species ? 'people' : VEHICLE_SPECIES.has(p.species) ? 'vehicles' : 'pets');
 let results = [];
@@ -244,11 +244,61 @@ function chipText(c) {
 }
 
 const badge = (text, cls = '') => el('span', { class: `badge ${cls}` }, text);
-const SPECIES_ICON = { cat: '🐈', dog: '🐕', bird: '🐦', horse: '🐴', sheep: '🐑', cow: '🐄' };
-/** Chi è stato riconosciuto nell'evento: tutte le persone (👤), gli animali (🐾) e i veicoli (🚗) che compaiono. */
-const subjectIcon = (s) => (!s.species ? '👤' : VEHICLE_SPECIES.has(s.species) ? (VEHICLE_ICON[s.species] || '🚗') : (SPECIES_ICON[s.species] || '🐾'));
 const subjectLabel = (s) => s.name || `${t('people.unknown')} #${s.id}`;
-const whoBadge = (e) => (e.subjects || []).map((s) => badge(`${subjectIcon(s)} ${subjectLabel(s)}`));
+/** Tag di un soggetto riconosciuto, con l'icona monocromatica del suo tipo (persona, veicolo, animale). */
+function subjBadge(s) {
+  const b = badge('');
+  b.innerHTML = `${svgIcon(subjectIconName(s.species), 13)} `;
+  b.append(subjectLabel(s));
+  return b;
+}
+const whoBadge = (e) => (e.subjects || []).map(subjBadge);
+
+/**
+ * Tag del tipo di evento. L'amministratore lo può togliere (l'evento resta come semplice movimento); per incendio e
+ * allagamento il pulsante dice "Falso allarme" e Argo impara a non ripetere l'errore su quella telecamera.
+ */
+function kindTag(e) {
+  const tag = badge(t(`kind.${e.kind}`), `k-${e.kind}`);
+  if (!isAdmin() || e.kind === 'motion') return tag;
+  const hazard = e.kind === 'fire' || e.kind === 'flood';
+  const btn = el('button', {
+    type: 'button', class: 'mini danger', title: t(hazard ? 'ev.falseAlarm' : 'ev.removeTag'),
+    onclick: async () => {
+      const k = t(`kind.${e.kind}`);
+      if (!confirm(t(hazard ? 'ev.falseAlarmConfirm' : 'ev.removeTagConfirm', { k }))) return;
+      try {
+        const upd = await api('POST', `/api/events/${e.id}/kind`, { kind: 'motion', falseAlarm: hazard });
+        const i = results.findIndex((x) => x.id === e.id);
+        if (i >= 0) results[i] = upd;
+        renderResults();
+        showDetail(upd);
+        if (hazard) toast(t('ev.falseAlarmDone'));
+      } catch (err) { toast(errorText(err), { kind: 'err' }); }
+    },
+  }, hazard ? `✕ ${t('ev.falseAlarm')}` : '✕');
+  return el('span', { class: 'kind-tag' }, tag, btn);
+}
+
+/** Da dove viene l'evento: interno (registrato da Argo), archivio di rete, hub Reolink, cloud Eufy. */
+function sourceTags(e) {
+  const tags = [];
+  const mk = (icon, key) => { const b = badge(''); b.classList.add('src'); b.innerHTML = `${svgIcon(icon, 12)} `; b.append(t(key)); return b; };
+  const src = e.meta?.source;
+  if (src === 'reolink-hub') tags.push(mk('server-network', 'src.hub'));
+  else if (src === 'eufy-push') tags.push(mk('cloud', 'src.eufy'));
+  else tags.push(mk(e.archived ? 'archive' : 'harddisk', e.archived ? 'src.archive' : 'src.local'));
+  if (e.meta?.hubLinked) tags.push(mk('server-network', 'src.hubCopy'));
+  return tags;
+}
+
+/** Segnaposto senza immagine: icona monocromatica neutra del tipo di soggetto, con la scritta "nessuna immagine". */
+function noThumb(p) {
+  const d = el('div', { class: 'noimg nothumb', title: t('people.noImage') });
+  d.innerHTML = `${svgIcon(subjectIconName(p.species), 38)}<small></small>`;
+  d.querySelector('small').textContent = t('people.noImage');
+  return d;
+}
 
 const SUBJECT_KINDS = new Set(['person', 'face', 'vehicle', 'pet']);
 
@@ -286,7 +336,7 @@ function subjectsEditor(e) {
       type: 'button', class: 'mini danger', title: t('people.sampleRemove'),
       onclick: () => { if (confirm(t('ev.whoNoneConfirm'))) send({ action: 'remove', from: s.id }); },
     }, '✕');
-    box.append(el('span', { class: 'subj-row' }, el('span', { class: 'badge' }, `${subjectIcon(s)} ${subjectLabel(s)}`), change, remove));
+    box.append(el('span', { class: 'subj-row' }, subjBadge(s), change, remove));
   }
   if (SUBJECT_KINDS.has(e.kind) || (e.subjects || []).length) {
     const add = el('button', { type: 'button', class: 'mini' }, `＋ ${t('ev.whoAdd')}`);
@@ -323,7 +373,7 @@ function card(e) {
     e.vehicleType && badge(t(`vtype.${e.vehicleType}`)),
     e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
     e.plate && badge(e.plate, 'plate'),
-    whoBadge(e), e.archived && badge(`🗄️ ${t('ev.archived')}`),
+    whoBadge(e), ...sourceTags(e),
     isAdmin() && e.meta?.objects && badge('🔍', 'analysed'));
   const check = el('span', { class: 'ev-check' }, selected.has(e.id) ? '☑' : '☐');
   const node = el('button', {
@@ -394,7 +444,7 @@ function showDetail(e) {
   const close = () => { box.classList.remove('open'); box.replaceChildren(el('p', { class: 'note empty' }, t('ev.pick'))); selectedId = null; for (const c of $$('.ev-card.sel')) c.classList.remove('sel'); };
   const info = el('div', { class: 'info' },
     el('h3', {}, e.camName), el('p', {}, fmtDate(e.ts, { dateStyle: 'full', timeStyle: 'medium' })),
-    el('div', { class: 'tags' }, badge(t(`kind.${e.kind}`), `k-${e.kind}`),
+    el('div', { class: 'tags' }, kindTag(e),
       e.vehicleType && badge(t(`vtype.${e.vehicleType}`)), e.vehicleColor && badge(t(`color.${e.vehicleColor}`), `c-${e.vehicleColor}`),
       e.plate && badge(`${t('ev.plate')} ${e.plate}`), isAdmin() ? null : whoBadge(e)),
     isAdmin() ? subjectsEditor(e) : null,
@@ -411,6 +461,8 @@ function showDetail(e) {
       }, `↻ ${t('ev.reanalyze')}`)) : null,
     e.clip && e.snapshot ? el('a', { href: `/media/${e.snapshot}`, target: '_blank' }, '🖼') : null,
     e.clip ? el('a', { class: 'dl', href: `/media/${e.clip}`, download: e.clip.split('/').pop() }, `⬇ ${t('ev.downloadOrig')}`) : null,
+    e.meta?.hubName ? el('a', { class: 'dl', href: `/api/events/${e.id}/hub-original` }, `⬇ ${t('ev.hubOriginal')}`) : null,
+    el('div', { class: 'tags' }, ...sourceTags(e)),
     el('div', { class: 'row' },
       boxBtn,
       isAdmin() && el('button', {
@@ -580,7 +632,7 @@ async function loadPeople(kind = 'people') {
       samples.replaceChildren(...(list.length ? list.map(sample) : [el('p', { class: 'note' }, t('people.noSamples'))]));
     };
     return el('div', { class: 'person' },
-      p.crop ? el('img', { src: `/media/${p.crop}`, alt: '' }) : el('div', { class: 'noimg' }, p.species ? (VEHICLE_SPECIES.has(p.species) ? '🚗' : '🐾') : '👤'),
+      p.crop ? el('img', { src: `/media/${p.crop}`, alt: '' }) : noThumb(p),
       el('div', { class: 'pinfo' }, name, similar,
         el('span', { class: 'note' }, `${t(kind === 'people' ? 'people.faces' : 'people.images', { n: p.faces })} · ${t('people.events', { n: p.events })}`),
         el('div', { class: 'row' },
