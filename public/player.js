@@ -24,6 +24,9 @@ class CamStream extends VideoRTC {
   constructor() {
     super();
     this.pcConfig = { bundlePolicy: 'max-bundle', iceServers: [] };
+    // Il player di go2rtc chiude il flusso 5 secondi dopo che la pagina non è in primo piano: così la finestra
+    // fluttuante si fermerebbe. La pagina (app.js) ferma da sola i flussi che non servono quando è in secondo piano.
+    this.visibilityCheck = false;
   }
 
   oninit() {
