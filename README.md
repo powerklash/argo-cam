@@ -14,6 +14,10 @@ A **local-first multi-camera viewer** for PC and phone. Watch Reolink, Eufy (loc
 - **Local recognition** (no cloud): faces, individual pets and individual vehicles get their own tab where you name them; new subjects that look like a known one are *suggested* for merging. A video can show several people, pets or vehicles at once: each is recognised and shown on the event, and the admin can change, remove or add subjects (and move or remove the learned images) when a match is wrong.
 - **Red overlay box** that follows the subject in event clips (drawn on top of the video, can be switched off).
 - **Fire / flood alerts** (heuristic checks on camera video, per camera, with siren and banner). They are approximate and **do not replace** a smoke or flood detector.
+- **Eufy events from the cloud**: the push notifications Eufy sends to its phone app (person, motion, pet, vehicle, doorbell) become Argo events with the preview image, also for battery cameras. Needs the Eufy sign-in and the helper tool (`install.sh --with-eufy-login`).
+- **Reolink hub recordings** appear in the event list (light copy downloaded from the hub or SD card, original downloadable), each event tagged with its source (internal, archive, Reolink hub, Eufy cloud).
+- **Event tags and false alarms**: filter events by several tags at once; remove a tag; mark a fire/flood event as a false alarm and the camera learns to ignore that area.
+- **Live view controls**: stop/start any camera, a floating (picture-in-picture) window for the selected camera, an offline camera shows its last image in green, and a per-camera button opens its events.
 - **Network archive**: move old clips to SMB, WebDAV or a mounted folder while keeping them searchable and playable.
 - **Users and permissions**: admin and per-camera *watch* / *control* levels, scrypt passwords, brute-force lockout, CSRF protection.
 - Doorbell popup with two-way audio, Home Assistant icons/state (read-only token stored server side; monochrome Home Assistant icons with a multilingual search box, plus emoji), battery level icons, certificate download page for phones.
