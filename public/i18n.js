@@ -53,6 +53,7 @@ add({
   'ev.tagColor': ['Colore', 'Colour', 'Couleur', 'Farbe', 'Color'],
   'ev.tagSubject': ['Persone, animali, veicoli', 'People, pets, vehicles', 'Personnes, animaux, véhicules', 'Personen, Tiere, Fahrzeuge', 'Personas, animales, vehículos'],
   'ev.whoNamePrompt': ['Nome del nuovo soggetto (lascia vuoto per darlo dopo):', 'Name of the new subject (leave empty to name it later):', 'Nom du nouveau sujet (laisser vide pour le nommer plus tard) :', 'Name des neuen Objekts (leer lassen, um ihn später zu vergeben):', 'Nombre del nuevo sujeto (déjalo vacío para ponerlo después):'],
+  'tile.pip': ['Finestra fluttuante (resta sopra le altre)', 'Floating window (stays on top)', 'Fenêtre flottante (reste au-dessus)', 'Schwebendes Fenster (bleibt oben)', 'Ventana flotante (queda encima)'],
   'tile.stop': ['Ferma il video in diretta', 'Stop the live video', 'Arrêter la vidéo en direct', 'Live-Video anhalten', 'Detener el vídeo en directo'],
   'tile.stopAll': ['Ferma tutto', 'Stop all', 'Tout arrêter', 'Alle anhalten', 'Detener todo'],
   'tile.startAll': ['Avvia tutto', 'Start all', 'Tout démarrer', 'Alle starten', 'Iniciar todo'],

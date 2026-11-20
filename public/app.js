@@ -242,6 +242,7 @@ async function setOffline(tile, off, asleep) {
 }
 
 setInterval(() => {
+  if (document.hidden) return; // in secondo piano i flussi sono fermi di proposito: nessun riquadro offline
   const now = Date.now();
   for (const tile of grid.children) {
     const live = tile.classList.contains('live');
@@ -355,6 +356,7 @@ function makeTile(cam) {
         <button data-act="mute" data-i18n-title="tile.audio">🔇</button>
         <button data-act="focus" data-i18n-title="tile.focus">⤢</button>
         <button data-act="stop" data-i18n-title="tile.stop">⏹</button>
+        ${document.pictureInPictureEnabled ? '<button data-act="pip" data-i18n-title="tile.pip">⧉</button>' : ''}
         ${cam.battery ? '<button data-act="pause" data-i18n-title="tile.pause">⏸</button>' : ''}
         ${['reolink', 'eufyp2p'].includes(cam.brand) && cam.level >= 2 ? '<button data-act="options" data-i18n-title="tile.options">⚙</button>' : ''}
         ${isAdmin() ? '<button data-act="edit" data-i18n-title="tile.edit">✎</button>' : ''}
@@ -391,6 +393,7 @@ function makeTile(cam) {
     if (act === 'edit') openDialog(cur);
     if (act === 'options') openPanel(cur);
     if (act === 'pause') pauseTile(tile);
+    if (act === 'pip') pipTile(tile);
     if (act === 'stop') { if (tile.dataset.stopped) resumeTile(tile); else stopTile(tile); }
     if (act === 'events') openEventsFor(cam.id);
     if (act === 'prev') moveCamera(cam.id, indexOf(cam.id) - 1);
@@ -998,3 +1001,42 @@ function resumeAll() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAll(); });
 window.addEventListener('pageshow', () => setTimeout(restoreAudio, 2000));
 document.addEventListener('pointerdown', () => setTimeout(restoreAudio, 300), { once: true });
+
+// ---------- finestra fluttuante (Picture-in-Picture): la telecamera scelta resta visibile e con audio anche con l'app ridotta a icona ----------
+function videoOf(tile) { return tile?.querySelector('cam-stream video') || null; }
+
+async function pipTile(tile) {
+  const v = videoOf(tile);
+  if (!v) return;
+  try {
+    if (document.pictureInPictureElement === v) await document.exitPictureInPicture();
+    else { v.disablePictureInPicture = false; await v.requestPictureInPicture(); }
+  } catch (err) { toast(errorText(err), { kind: 'err' }); }
+}
+
+// Chrome apre da solo la finestra fluttuante quando si lascia la scheda, se la pagina lo dichiara tra le azioni multimediali.
+if ('mediaSession' in navigator) {
+  try {
+    navigator.mediaSession.setActionHandler('enterpictureinpicture', async () => {
+      const v = videoOf(state.selectedId && tileOf(state.selectedId));
+      if (v && document.pictureInPictureElement !== v) await v.requestPictureInPicture();
+    });
+  } catch { /* azione non supportata da questo browser */ }
+}
+function updateMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  const cam = camById(state.selectedId);
+  navigator.mediaSession.metadata = cam ? new MediaMetadata({ title: cam.name, artist: 'Argo' }) : null;
+  navigator.mediaSession.playbackState = cam ? 'playing' : 'none';
+}
+setInterval(updateMediaSession, 5000);
+
+// In secondo piano si tiene solo la telecamera scelta (e quella in finestra fluttuante): le altre non scaricano video.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  for (const tile of grid.children) {
+    if (tile.dataset.id === state.selectedId || videoOf(tile) === document.pictureInPictureElement) continue;
+    tile.querySelector('cam-stream')?.remove();
+    tile.classList.remove('live');
+  }
+});
