@@ -65,6 +65,7 @@ function setSelected(id) {
   if (state.selectedId === id) return;
   const prev = state.selectedId;
   state.selectedId = id;
+  try { localStorage.setItem('selectedCam', id || ''); } catch { /* memoria del browser non disponibile */ }
   for (const tile of grid.children) tile.classList.toggle('selected', tile.dataset.id === id);
   // Il flusso si riapre con o senza audio.
   for (const tid of [prev, id]) {
@@ -490,6 +491,7 @@ function updateCount() {
 function render() {
   closePanel();
   state.focusedId = null;
+  if (!state.selectedId) { try { state.selectedId = localStorage.getItem('selectedCam') || null; } catch { /* nessuna memoria */ } } // la principale scelta si ricorda anche dopo che l'app è stata ricaricata
   if (state.selectedId && !camById(state.selectedId)) state.selectedId = null;
   grid.classList.remove('has-focus');
   grid.replaceChildren(...state.cameras.map(makeTile));
@@ -975,3 +977,24 @@ updateEmptyText();
 await reload();
 initSettings(app);
 initEvents(app);
+
+// ---------- ritorno dall'app messa in secondo piano: i flussi riprendono e l'audio della telecamera scelta torna attivo ----------
+function restoreAudio() {
+  const tile = state.selectedId && tileOf(state.selectedId);
+  const v = tile?.querySelector('cam-stream video');
+  if (!v || tile.dataset.muted === '1') return;
+  v.muted = false;
+  const p = v.play();
+  // Il browser può rifiutare l'audio finché non c'è un tocco: al primo tocco si riattiva.
+  p?.catch(() => { v.muted = true; v.play().catch(() => {}); document.addEventListener('pointerdown', () => { v.muted = false; v.play().catch(() => {}); }, { once: true }); });
+}
+function resumeAll() {
+  for (const tile of grid.children) {
+    if (!tile.classList.contains('live') && !tile.dataset.paused && !tile.dataset.private && !tile.dataset.authFailed) mountStream(tile, tile.dataset.quality || wantedQuality(tile));
+  }
+  setTimeout(restoreAudio, 1500);
+  setTimeout(restoreAudio, 5000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeAll(); });
+window.addEventListener('pageshow', () => setTimeout(restoreAudio, 2000));
+document.addEventListener('pointerdown', () => setTimeout(restoreAudio, 300), { once: true });

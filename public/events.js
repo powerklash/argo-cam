@@ -230,6 +230,7 @@ let tab = 'events';
 let personFilter = null;
 let tags = []; // tag di filtro scelti: { g: 'kind'|'vtype'|'color'|'subject', v, label }
 let focusCam = null;
+const openSamples = new Set(); // soggetti con l'elenco delle immagini aperto
 let live = null; // aggiornamento della lista all'arrivo di un nuovo evento
 
 function chipText(c) {
@@ -654,7 +655,7 @@ async function loadPeople(kind = 'people') {
         const move = el('select', { class: 'mini' }, new Option(t('people.sampleMove'), ''), ...others(p).map((o) => new Option(o.name || `${t('people.unknown')} #${o.id}`, o.id)), new Option(t('people.sampleNew'), 'new'));
         move.onchange = async () => {
           if (!move.value) return;
-          try { await api('POST', `/api/persons/${p.id}/faces/${f.id}/move`, { into: move.value === 'new' ? 'new' : Number(move.value) }); loadPeople(kind); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+          try { await api('POST', `/api/persons/${p.id}/faces/${f.id}/move`, { into: move.value === 'new' ? 'new' : Number(move.value) }); loadSamples(); /* l'elenco resta aperto per spostare le altre */ } catch (err) { toast(errorText(err), { kind: 'err' }); }
         };
         return el('div', { class: 'sample' },
           f.crop ? el('img', { src: `/media/${f.crop}`, alt: '', loading: 'lazy' }) : el('div', { class: 'noimg' }, '·'),
@@ -664,12 +665,13 @@ async function loadPeople(kind = 'people') {
             type: 'button', class: 'danger mini', title: t('people.sampleRemove'),
             onclick: async () => {
               if (!confirm(t('people.sampleConfirm'))) return;
-              try { await api('DELETE', `/api/persons/${p.id}/faces/${f.id}`); loadPeople(kind); } catch (err) { toast(errorText(err), { kind: 'err' }); }
+              try { await api('DELETE', `/api/persons/${p.id}/faces/${f.id}`); loadSamples(); } catch (err) { toast(errorText(err), { kind: 'err' }); }
             },
           }, '✕ ' + t('people.sampleRemove')));
       };
       samples.replaceChildren(...(list.length ? list.map(sample) : [el('p', { class: 'note' }, t('people.noSamples'))]));
     };
+    if (openSamples.has(p.id)) { samples.hidden = false; loadSamples(); } // dopo un aggiornamento della lista, le immagini già aperte restano aperte
     return el('div', { class: 'person' },
       p.crop ? el('img', { src: `/media/${p.crop}`, alt: '' }) : noThumb(p),
       el('div', { class: 'pinfo' }, name, similar,
@@ -677,7 +679,7 @@ async function loadPeople(kind = 'people') {
         el('div', { class: 'row' },
           el('button', { type: 'button', onclick: async () => { await api('PUT', `/api/persons/${p.id}`, { name: name.value }); loadPeople(kind); } }, t('people.rename')),
           el('button', { type: 'button', onclick: () => { personFilter = p.id; switchTab('events'); runSearch(); } }, t('ev.tabEvents')),
-          el('button', { type: 'button', onclick: () => { samples.hidden = !samples.hidden; if (!samples.hidden) loadSamples(); } }, t('people.samples', { n: p.faces })),
+          el('button', { type: 'button', onclick: () => { samples.hidden = !samples.hidden; if (samples.hidden) openSamples.delete(p.id); else { openSamples.add(p.id); loadSamples(); } } }, t('people.samples', { n: p.faces })),
           merge,
           el('button', {
             type: 'button', class: 'danger',
