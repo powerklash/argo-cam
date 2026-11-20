@@ -222,10 +222,14 @@ const KIND_ORDER = ['person', 'vehicle', 'pet', 'face', 'package', 'motion', 'vi
 const ANIMAL_SPECIES = new Set(['cat', 'dog', 'bird', 'horse', 'sheep', 'cow']);
 const VEHICLE_SPECIES = new Set(['car', 'truck', 'bus', 'motorcycle', 'bicycle']);
 /** Gruppo (scheda) di una persona riconosciuta: persone, animali o veicoli. */
+/** Chiave di unione: persone, veicoli (tutti insieme) o animali della stessa specie. */
+const compat = (p) => (!p.species ? 'p' : VEHICLE_SPECIES.has(p.species) ? 'v' : p.species);
 const groupOf = (p) => (!p.species ? 'people' : VEHICLE_SPECIES.has(p.species) ? 'vehicles' : 'pets');
 let results = [];
 let tab = 'events';
 let personFilter = null;
+let tags = []; // tag di filtro scelti: { g: 'kind'|'vtype'|'color'|'subject', v, label }
+let focusCam = null;
 let live = null; // aggiornamento della lista all'arrivo di un nuovo evento
 
 function chipText(c) {
@@ -300,6 +304,9 @@ function noThumb(p) {
   return d;
 }
 
+/** Nome per un nuovo soggetto creato dall'evento (vuoto = senza nome); null se si annulla. */
+const askName = () => { const n = prompt(t('ev.whoNamePrompt')); return n === null ? null : n.trim().slice(0, 60); };
+
 const SUBJECT_KINDS = new Set(['person', 'face', 'vehicle', 'pet']);
 
 /**
@@ -328,7 +335,13 @@ function subjectsEditor(e) {
       const sel = el('select', { class: 'mini' }, new Option(t('ev.whoPick'), ''));
       for (const p of all.filter((x) => groupOf(x) === groupOf(s) && !inEvent.has(x.id))) sel.add(new Option(subjectLabel(p), p.id));
       sel.add(new Option(t('ev.whoNew'), 'new'));
-      sel.onchange = () => { if (sel.value) send({ action: 'change', from: s.id, to: sel.value === 'new' ? 'new' : Number(sel.value) }); };
+      sel.onchange = () => {
+        if (!sel.value) return;
+        if (sel.value !== 'new') return send({ action: 'change', from: s.id, to: Number(sel.value) });
+        const nm = askName();
+        if (nm === null) { sel.value = ''; return; }
+        send({ action: 'change', from: s.id, to: 'new', name: nm });
+      };
       change.replaceWith(sel);
       sel.focus();
     };
@@ -354,7 +367,10 @@ function subjectsEditor(e) {
       sel.onchange = () => {
         if (!sel.value) return;
         const [group, id] = sel.value.split(':');
-        send({ action: 'add', group, to: id === 'new' ? 'new' : Number(id) });
+        if (id !== 'new') return send({ action: 'add', group, to: Number(id) });
+        const nm = askName();
+        if (nm === null) { sel.value = ''; return; }
+        send({ action: 'add', group, to: 'new', name: nm });
       };
       add.replaceWith(sel);
       sel.focus();
@@ -551,7 +567,9 @@ async function runSearch(reset = true) {
   const text = $('#ev-q').value.trim();
   if (text) q.set('q', text);
   if ($('#ev-cam').value) q.set('cam', $('#ev-cam').value);
-  if ($('#ev-kind').value) q.set('kind', $('#ev-kind').value);
+  // Tag scelti: i tipi di evento, di veicolo e i colori valgono "uno qualsiasi"; i soggetti devono comparire tutti.
+  const of = (g) => tags.filter((x) => x.g === g).map((x) => x.v).join(',');
+  for (const [g, key] of [['kind', 'kinds'], ['vtype', 'vtypes'], ['color', 'colors'], ['subject', 'subjects']]) if (of(g)) q.set(key, of(g));
   if (personFilter) q.set('person', personFilter);
   q.set('limit', '48');
   q.set('offset', reset ? '0' : String(results.length));
@@ -567,13 +585,34 @@ async function runSearch(reset = true) {
 function buildEventsTab() {
   const cam = el('select', { id: 'ev-cam' }, new Option(t('ev.allCams'), ''));
   for (const c of state.cameras) cam.add(new Option(c.name, c.id));
-  const kind = el('select', { id: 'ev-kind' }, new Option(t('ev.allKinds'), ''));
-  for (const k of KIND_ORDER) kind.add(new Option(t(`kind.${k}`), k));
   const input = el('input', { id: 'ev-q', type: 'search', placeholder: t('ev.search'), autocomplete: 'off' });
   const go = (e) => { e?.preventDefault(); personFilter = null; runSearch().catch((err) => toast(errorText(err), { kind: 'err' })); };
-  const form = el('form', { class: 'ev-form', onsubmit: go }, input, cam, kind, el('button', { class: 'primary', type: 'submit' }, t('ev.go')));
-  cam.onchange = kind.onchange = go;
-  return el('section', { id: 'ev-tab-events' }, form, el('div', { id: 'ev-chips', class: 'chips' }), el('div', { id: 'ev-bulk', class: 'ev-bulk' }),
+  // Tag di filtro: se ne possono aggiungere quanti si vuole, e si tolgono con ✕.
+  const tagBox = el('div', { id: 'ev-tags', class: 'chips' });
+  const paintTags = () => tagBox.replaceChildren(...tags.map((x, i) => el('span', { class: 'chip tagchip' }, x.label,
+    el('button', { type: 'button', class: 'x', title: t('ev.removeTag'), onclick: () => { tags.splice(i, 1); paintTags(); go(); } }, '✕'))));
+  const add = el('select', { id: 'ev-tag', title: t('ev.addTag') }, new Option(`＋ ${t('ev.addTag')}`, ''));
+  const group = (label, items) => { const og = el('optgroup', { label }); for (const [v, l] of items) og.append(new Option(l, v)); add.append(og); return og; };
+  group(t('ev.tagKind'), KIND_ORDER.map((k) => [`kind:${k}`, t(`kind.${k}`)]));
+  group(t('ev.tagVehicle'), ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].map((k) => [`vtype:${k}`, t(`vtype.${k}`)]));
+  group(t('ev.tagColor'), ['white', 'black', 'grey', 'silver', 'red', 'blue', 'green', 'yellow', 'orange', 'brown'].map((k) => [`color:${k}`, t(`color.${k}`)]));
+  if (isAdmin()) {
+    api('GET', '/api/persons').then((all) => {
+      const named = all.filter((p) => p.name);
+      if (named.length) group(t('ev.tagSubject'), named.map((p) => [`subject:${p.id}`, p.name]));
+    }).catch(() => {});
+  }
+  add.onchange = () => {
+    if (!add.value) return;
+    const [g, v] = add.value.split(':');
+    if (!tags.some((x) => x.g === g && x.v === v)) tags.push({ g, v, label: add.options[add.selectedIndex].text });
+    add.value = '';
+    paintTags();
+    go();
+  };
+  const form = el('form', { class: 'ev-form', onsubmit: go }, input, cam, add, el('button', { class: 'primary', type: 'submit' }, t('ev.go')));
+  cam.onchange = go;
+  return el('section', { id: 'ev-tab-events' }, form, tagBox, el('div', { id: 'ev-chips', class: 'chips' }), el('div', { id: 'ev-bulk', class: 'ev-bulk' }),
     el('div', { class: 'ev-split' },
       el('div', { id: 'ev-listwrap', class: 'ev-listwrap' },
         el('div', { id: 'ev-results', class: 'ev-grid' }), el('p', { id: 'ev-empty', class: 'note', hidden: true }, t('ev.none')),
@@ -588,7 +627,7 @@ async function loadPeople(kind = 'people') {
   let people = [];
   try { people = await api('GET', '/api/persons'); } catch { /* riconoscimento non attivo */ }
   // Si può unire solo dentro lo stesso gruppo/specie.
-  const others = (p) => people.filter((o) => o.id !== p.id && (o.species || null) === (p.species || null));
+  const others = (p) => people.filter((o) => o.id !== p.id && compat(o) === compat(p));
   const card = (p) => {
     const name = el('input', { type: 'text', value: p.name || '', placeholder: t('people.unknown'), maxLength: 60 });
     const merge = el('select', {}, new Option(t('people.merge'), ''), ...others(p).map((o) => new Option(o.name || `${t('people.unknown')} #${o.id}`, o.id)));
@@ -687,8 +726,8 @@ async function loadPeople(kind = 'people') {
       el('button', { type: 'button', onclick: () => { picked.clear(); renderPickBar(); } }, t('people.pickNone'))];
     // Unire ha senso solo per soggetti ancora senza nome, e verso uno dello stesso tipo (stessa specie).
     if (chosen.every((p) => !p.name)) {
-      const species = new Set(chosen.map((p) => p.species || ''));
-      const targets = named.filter((o) => species.size === 1 && (o.species || '') === [...species][0]);
+      const species = new Set(chosen.map(compat));
+      const targets = named.filter((o) => species.size === 1 && compat(o) === [...species][0]);
       const into = el('select', {}, new Option(t('people.merge'), ''), ...targets.map((o) => new Option(o.name, o.id)), new Option(t('people.pickNew'), 'new'));
       into.onchange = async () => {
         if (!into.value) return;
@@ -696,7 +735,7 @@ async function loadPeople(kind = 'people') {
         if (into.value !== 'new') return mergeInto(ids, Number(into.value));
         const nm = (prompt(t('people.pickNewPrompt')) || '').trim().slice(0, 60);
         if (!nm) { into.value = ''; return; }
-        const same = named.find((o) => o.name.toLowerCase() === nm.toLowerCase() && (o.species || '') === [...species][0]);
+        const same = named.find((o) => o.name.toLowerCase() === nm.toLowerCase() && compat(o) === [...species][0]);
         if (same) return mergeInto(ids, same.id);
         try { await api('PUT', `/api/persons/${ids[0]}`, { name: nm }); } catch (err) { toast(errorText(err), { kind: 'err' }); return; }
         mergeInto(ids.slice(1), ids[0]);
@@ -878,6 +917,7 @@ function switchTab(name) {
 }
 
 async function openEvents() {
+  tags = [];
   const body = $('#events-body');
   body.replaceChildren(buildEventsTab(), el('div', { id: 'ev-people', class: 'people', hidden: true }));
   $('#events-title').textContent = t('ev.title');
@@ -890,6 +930,7 @@ async function openEvents() {
   renderBulk();
   switchTab('events');
   $('#events').showModal();
+  if (focusCam) { $('#ev-cam').value = focusCam; focusCam = null; }
   try {
     await runSearch();
     if (focusEventId) { const e = results.find((x) => x.id === focusEventId); if (e) showDetail(e); }
@@ -898,6 +939,8 @@ async function openEvents() {
   focusEventId = null;
 }
 let focusEventId = null;
+/** Apre gli eventi già filtrati su una telecamera (bottone sul riquadro). */
+export function openEventsFor(camId) { focusCam = camId; openEvents(); }
 
 // Un nuovo evento aggiorna la lista aperta (senza ricerca attiva).
 function onStored() {

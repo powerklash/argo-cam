@@ -685,7 +685,7 @@ async function handleApi(req, res, url) {
     if (parts[3] === 'merge' && req.method === 'POST') {
       const into = Number((await readBody(req)).into);
       if (!into || into === id) throw new Error('Persona di destinazione non valida');
-      if (db.personSpecies(id) !== db.personSpecies(into)) throw new Error('Si possono unire solo persone con persone e animali della stessa specie');
+      if (db.compatKey(db.personSpecies(id)) !== db.compatKey(db.personSpecies(into))) throw new Error('Si possono unire solo persone con persone e animali della stessa specie');
       db.mergePersons(id, into);
       recognition.invalidateFaces();
       return json(res, 200, { ok: true });
@@ -711,7 +711,7 @@ async function handleApi(req, res, url) {
       if (parts[5] === 'move' && req.method === 'POST') {
         const raw = (await readBody(req)).into;
         const into = raw === 'new' ? db.createPerson(null, db.personSpecies(id)) : Number(raw);
-        if (!into || into === id || db.personSpecies(into) !== db.personSpecies(id)) throw new HttpError(400, 'Soggetto di destinazione non valido');
+        if (!into || into === id || db.compatKey(db.personSpecies(into)) !== db.compatKey(db.personSpecies(id))) throw new HttpError(400, 'Soggetto di destinazione non valido');
         db.moveFace(faceId, into);
         recognition.invalidateFaces();
         return json(res, 200, { ok: true, into });
@@ -721,7 +721,7 @@ async function handleApi(req, res, url) {
       const name = String((await readBody(req)).name || '').trim().slice(0, 60) || null;
       const same = name && db.personByName(name);
       // Dare a una persona il nome di un'altra già nota significa che sono la stessa: si uniscono.
-      if (same && same.id !== id && db.personSpecies(same.id) === db.personSpecies(id)) db.mergePersons(id, same.id);
+      if (same && same.id !== id && db.compatKey(db.personSpecies(same.id)) === db.compatKey(db.personSpecies(id))) db.mergePersons(id, same.id);
       else db.renamePerson(id, name);
       recognition.invalidateFaces();
       return json(res, 200, { ok: true });
@@ -772,6 +772,12 @@ async function handleApi(req, res, url) {
       if (q.cam) filter.camIds = [q.cam];
       if (q.person && isAdmin) filter.personIds = [Number(q.person)];
       if (q.kind) filter.kinds = [q.kind];
+      const csv = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 20);
+      if (q.kinds) filter.kinds = [...(filter.kinds || []), ...csv(q.kinds).filter((k) => EVENT_KINDS.includes(k))];
+      if (q.vtypes) filter.vehicleTypes = csv(q.vtypes);
+      if (q.colors) filter.colors = csv(q.colors);
+      if (q.subjects && isAdmin) filter.allPersonIds = csv(q.subjects).map(Number).filter(Boolean);
+      if (q.cams) filter.camIds = csv(q.cams);
       if (q.from) filter.from = Number(q.from);
       if (q.to) filter.to = Number(q.to);
       filter.limit = Math.min(200, Number(q.limit) || 60);
@@ -847,7 +853,10 @@ async function handleApi(req, res, url) {
         const group = action === 'change' ? db.subjectGroupOfSpecies(db.personSpecies(from)) : ['people', 'pets', 'vehicles'].includes(body.group) ? body.group : db.subjectGroupOfKind(e.kind);
         if (body.to === 'new') {
           const species = action === 'change' ? db.personSpecies(from) : group === 'vehicles' ? (e.vehicleType || 'car') : group === 'pets' ? 'dog' : null;
-          to = db.createPerson(null, species);
+          const nm = String(body.name || '').trim().slice(0, 60) || null;
+          const same = nm && db.personByName(nm);
+          // Un nome già usato da un soggetto compatibile significa lo stesso soggetto: si assegna quello.
+          to = same && db.compatKey(same.species) === db.compatKey(species) ? same.id : db.createPerson(nm, species);
         } else {
           to = Number(body.to);
           if (!to || !db.personExists(to) || db.subjectGroupOfSpecies(db.personSpecies(to)) !== group) throw new HttpError(400, 'Soggetto non valido');

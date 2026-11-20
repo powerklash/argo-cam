@@ -3,9 +3,10 @@ import './i18n-panel.js';
 import { t, applyI18n, getLang, LANGS, setLang, fmtDate } from './i18n.js';
 import { state, $, $$, api, el, camById, toast, errorText, isAdmin } from './state.js';
 import './player.js';
+import { svgIcon } from './icons.js';
 import { openPanel, closePanel, panelCam } from './panel.js';
 import { initSettings } from './settings.js';
-import { initEvents } from './events.js';
+import { initEvents, openEventsFor } from './events.js';
 import { mountHa, fillHaRows, readHaRows } from './ha.js';
 
 // Icone occhio: aperto = privacy spenta, barrato = privacy attiva.
@@ -78,12 +79,12 @@ const wakeLimitOf = (cam) => cam.wakeLimit ?? state.settings?.wakeLimit ?? 60;
 function renderCover(tile, message) {
   const cam = camById(tile.dataset.id);
   const cover = $('.cover', tile);
-  if (!cam?.battery) { cover.hidden = true; return; }
+  if (!cam?.battery && !tile.dataset.stopped) { cover.hidden = true; return; }
   const waking = !!tile.dataset.waking;
   cover.hidden = !tile.dataset.paused;
   const btn = $('.wake-btn', cover);
   btn.disabled = waking;
-  btn.textContent = waking ? t('bat.waking') : `${state.sleeping.get(cam.id) === false ? '▶' : '⏻'} ${state.sleeping.get(cam.id) === false ? t('bat.play') : t('bat.wake')}`;
+  btn.textContent = tile.dataset.stopped ? '▶ ' + t('bat.play') : waking ? t('bat.waking') : `${state.sleeping.get(cam.id) === false ? '▶' : '⏻'} ${state.sleeping.get(cam.id) === false ? t('bat.play') : t('bat.wake')}`;
   // Eufy a riposo: durante l'attesa si può svegliare la telecamera dall'app Eufy.
   $('.cover-note', cover).textContent = message || (waking && cam.brand === 'eufyp2p' ? t('bat.wakingEufy') : '');
 }
@@ -118,6 +119,34 @@ async function refreshBatteries() {
   } catch { /* si riprova al giro successivo */ }
 }
 setInterval(refreshBatteries, 60_000);
+
+/** Ferma il video in diretta di una telecamera (qualsiasi tipo): non scarica nulla finché non si preme Avvia. */
+function stopTile(tile) {
+  tile.dataset.paused = '1';
+  tile.dataset.stopped = '1';
+  tile.querySelector('cam-stream')?.remove();
+  tile.classList.remove('live');
+  renderCover(tile);
+  syncStopAll();
+}
+
+function resumeTile(tile) {
+  delete tile.dataset.stopped;
+  const cam = camById(tile.dataset.id);
+  if (cam?.battery) { startBattery(tile); syncStopAll(); return; }
+  delete tile.dataset.paused;
+  renderCover(tile);
+  mountStream(tile, wantedQuality(tile));
+  syncStopAll();
+}
+
+function syncStopAll() {
+  const btn = $('#btn-stopall');
+  if (!btn) return;
+  const live = [...grid.children].some((x) => !x.dataset.paused && !x.dataset.private);
+  btn.dataset.state = live ? 'stop' : 'start';
+  btn.textContent = live ? '⏹ ' + t('tile.stopAll') : '▶ ' + t('tile.startAll');
+}
 
 function pauseTile(tile) {
   tile.dataset.paused = '1';
@@ -195,7 +224,7 @@ async function setOffline(tile, off, asleep) {
     tile.prepend(box);
     tile.classList.add('is-offline');
   }
-  $('b', box).textContent = t(asleep ? 'tile.asleep' : 'tile.offline');
+  $('b', box).textContent = t(tile.dataset.stopped ? 'tile.stopped' : asleep ? 'tile.asleep' : 'tile.offline');
   if (tile.dataset.offFrame) return; // l'immagine si carica una volta per episodio
   tile.dataset.offFrame = '1';
   try {
@@ -315,6 +344,7 @@ function makeTile(cam) {
     <div class="priv-cover" hidden>${EYE_OFF}<div class="priv-text"></div><button class="priv-off"></button></div>
     <div class="flash"></div>
     <div class="ha-icons" hidden></div>
+    <button class="ev-btn" data-act="events" data-i18n-title="tile.events"></button>
     <div class="bar">
       <span class="dot"></span><button class="priv-btn" hidden></button><span class="name"></span><span class="batt" hidden></span><span class="mode"></span><span class="bat-note"></span>
       <div class="tools">
@@ -323,11 +353,15 @@ function makeTile(cam) {
         <button data-act="primary" data-i18n-title="tile.primary">★</button>
         <button data-act="mute" data-i18n-title="tile.audio">🔇</button>
         <button data-act="focus" data-i18n-title="tile.focus">⤢</button>
-        ${cam.battery ? '<button data-act="pause" data-i18n-title="tile.pause">⏸</button>' : ''}
+        <button data-act="stop" data-i18n-title="tile.stop">⏹</button>
+XX
         ${['reolink', 'eufyp2p'].includes(cam.brand) && cam.level >= 2 ? '<button data-act="options" data-i18n-title="tile.options">⚙</button>' : ''}
         ${isAdmin() ? '<button data-act="edit" data-i18n-title="tile.edit">✎</button>' : ''}
       </div>
     </div>`;
+  $('.ev-btn', tile).innerHTML = svgIcon('history', 18);
+  $('.ev-btn', tile).addEventListener('click', (e) => { e.stopPropagation(); openEventsFor(cam.id); });
+  $('.ev-btn', tile).addEventListener('dblclick', (e) => e.stopPropagation());
   $('.name', tile).textContent = cam.name;
   applyI18n(tile);
   if (cam.battery) { tile.dataset.paused = '1'; tile.classList.add('battery'); }
@@ -340,7 +374,7 @@ function makeTile(cam) {
   $('.priv-off', tile).addEventListener('click', togglePrivacy);
   $('.priv-btn', tile).addEventListener('dblclick', (e) => e.stopPropagation());
   $('.priv-cover', tile).addEventListener('dblclick', (e) => e.stopPropagation());
-  $('.wake-btn', tile).addEventListener('click', (e) => { e.stopPropagation(); startBattery(tile); });
+  $('.wake-btn', tile).addEventListener('click', (e) => { e.stopPropagation(); if (tile.dataset.stopped) resumeTile(tile); else startBattery(tile); });
   $('.cover', tile).addEventListener('dblclick', (e) => e.stopPropagation());
 
   tile.addEventListener('click', () => setSelected(cam.id));
@@ -356,6 +390,8 @@ function makeTile(cam) {
     if (act === 'edit') openDialog(cur);
     if (act === 'options') openPanel(cur);
     if (act === 'pause') pauseTile(tile);
+    if (act === 'stop') { if (tile.dataset.stopped) resumeTile(tile); else stopTile(tile); }
+    if (act === 'events') openEventsFor(cam.id);
     if (act === 'prev') moveCamera(cam.id, indexOf(cam.id) - 1);
     if (act === 'next') moveCamera(cam.id, indexOf(cam.id) + 1);
     if (act === 'primary') moveCamera(cam.id, 0);
@@ -811,6 +847,16 @@ $('#btn-delete').addEventListener('click', async () => {
 });
 $('#btn-cancel').addEventListener('click', () => dlg.close());
 $('#btn-add').addEventListener('click', () => openDialog());
+$('#btn-stopall').addEventListener('click', () => {
+  const stop = $('#btn-stopall').dataset.state !== 'start';
+  for (const tile of grid.children) {
+    if (tile.dataset.private) continue;
+    if (stop && !tile.dataset.stopped && !tile.dataset.paused) stopTile(tile);
+    else if (!stop && tile.dataset.stopped) resumeTile(tile);
+  }
+  syncStopAll();
+});
+setInterval(syncStopAll, 2000);
 $('#btn-add-empty').addEventListener('click', () => openDialog());
 
 function fillBrandSelect() {
