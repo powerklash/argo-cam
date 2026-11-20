@@ -355,7 +355,7 @@ function makeTile(cam) {
         <button data-act="mute" data-i18n-title="tile.audio">🔇</button>
         <button data-act="focus" data-i18n-title="tile.focus">⤢</button>
         <button data-act="stop" data-i18n-title="tile.stop">⏹</button>
-XX
+        ${cam.battery ? '<button data-act="pause" data-i18n-title="tile.pause">⏸</button>' : ''}
         ${['reolink', 'eufyp2p'].includes(cam.brand) && cam.level >= 2 ? '<button data-act="options" data-i18n-title="tile.options">⚙</button>' : ''}
         ${isAdmin() ? '<button data-act="edit" data-i18n-title="tile.edit">✎</button>' : ''}
       </div>
